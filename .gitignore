@@ -1,0 +1,63 @@
+data/
+.streamlit/secrets.toml
+
+__pycache__/
+*.pyc
+
+.env
+
+*.parque# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+
+# =========================
+# Environments
+# =========================
+venv/
+.env/
+.venv/
+env/
+ENV/
+*.egg-info/
+
+# =========================
+# OS / IDE
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# =========================
+# Streamlit secrets
+# =========================
+.streamlit/secrets.toml
+
+# =========================
+# Data files
+# =========================
+data/raw/
+data/geo/IDATS/
+data/correlations_tumor/
+data/summary/
+
+# Large scientific files
+*.tsv
+*.csv
+*.parquet
+*.rds
+*.RData
+*.idat
+*.gz
+*.zip
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/t
