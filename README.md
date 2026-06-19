@@ -36,12 +36,6 @@ methylation_app/
 │   ├── 1_CpG_Explorer.py
 │   └── 2_Gene_Explorer.py
 │
-├── utils/
-│   ├── database.py
-│   ├── queries.py
-│   ├── plots.py
-│   └── config.py
-│
 ├── pipelines/
 │   ├── generate_leukocytes_methylation.R
 │   ├── 01_clean_manifiesto.py
@@ -56,12 +50,13 @@ methylation_app/
 │   ├── 11_merge_correlations.py
 │   ├── 12_build_cpg_feature.py
 │   ├── 13_generate_tumor_types.py
+│   ├── build_potgres.py
 │   └── README.md
 │
 ├── db/
 │   ├── schema.sql
-│   ├── build_postgres.py
-│   └── build_postgres_neon.py
+│   ├── database.py
+│   └── queries.py
 │
 ├── data/
 │   ├── raw/
@@ -398,7 +393,7 @@ Computes leukocyte reference methylation features.
 
 ---
 
-### `14_generate_tumor_types.py`
+### `13_generate_tumor_types.py`
 Generates a tumor type reference table.
 
 **Input:**
@@ -460,7 +455,7 @@ The expected database includes tables for CpG annotation, methylation summaries,
 ## Streamlit application
 The interactive application is organized into multiple pages.
 
-### `app.py`
+### `Main.py`
 Main entry point of the Streamlit app.
 
 ### `pages/1_CpG_Explorer.py`
@@ -549,7 +544,7 @@ python db/build_postgres_neon.py
 ## Running the app
 
 ```bash
-streamlit run app.py
+streamlit run Main.py
 ```
 
 Database credentials should be configured in:

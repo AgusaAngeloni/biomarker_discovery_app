@@ -1,17 +1,10 @@
-data/
-.streamlit/secrets.toml
-
-__pycache__/
-*.pyc
-
-.env
-
-*.parque# =========================
+# =========================
 # Python
 # =========================
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyc
 *.pyd
 .ipynb_checkpoints/
 
@@ -55,6 +48,7 @@ data/summary/
 *.idat
 *.gz
 *.zip
+*.IDAT
 
 # =========================
 # Logs

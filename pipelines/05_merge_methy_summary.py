@@ -79,58 +79,45 @@ final_df = pd.concat(
 # ============================================================
 final_df = final_df[
     [
-        "site_id",
-        "tumor_type",
-        "tumor_median",
+        "site_id",     
+        "tumor_type",     
+        "tumor_median",   
         "tumor_std",
+        "tumor_n", 
         "normal_median",
-        "normal_std",
-        "panTumor_median",
-        "panTumor_std",
-        "panNormal_median",
-        "panNormal_std",
-        "delta_median",
-        "dispersion_index",
-        "n_tumor",
-        "n_normal",
+        "normal_std",   
+        "normal_n",       
+        "panTumor_median", 
+        "panTumor_std",    
+        "panTumor_n",      
+        "panNormal_median",  
+        "panNormal_std",    
+        "panNormal_n",       
+        "delta_median",     
+        "HI_index",         
     ]
 ]
-final_df.columns = [
-        "site_id",
-        "tumor_type",
-        "tumor_median",
-        "tumor_std",
-        "normal_median",
-        "normal_std",
-        "pan_tumor_median",
-        "pan_tumor_std",
-        "pan_normal_median",
-        "pan_normal_std",
-        "delta_median",
-        "dispersion_index",
-        "n_tumor",
-        "n_normal"
-    ]
 
 # ============================================================
 # Types
 # ============================================================
 final_df = final_df.astype({
-    "site_id": str,
-    "tumor_type": str,
-
-    "tumor_median": "float64",
-    "tumor_std": "float64",
-    "normal_median": "float64",
-    "normal_std": "float64",
-    "pan_tumor_median": "float64",
-    "pan_tumor_std": "float64",
-    "pan_normal_median": "float64",
-    "pan_normal_std": "float64",
-    "delta_median": "float64",
-    "dispersion_index": "float64",
-    "n_tumor": "int64",
-    "n_normal": "int64"
+        "site_id": str ,
+        "tumor_type": str,   
+        "tumor_median":"float32",
+        "tumor_std":"float32",
+        "tumor_n":"int32",  
+        "normal_median":"float32",
+        "normal_std":"float32",
+        "normal_n":"int32",  
+        "panTumor_median":"float32",
+        "panTumor_std":"float32",
+        "panTumor_n":"int32",  
+        "panNormal_median":"float32",
+        "panNormal_std":"float32",
+        "panNormal_n":"int32",  
+        "delta_median":"float32",
+        "HI_index": "float32"
 })
 
 

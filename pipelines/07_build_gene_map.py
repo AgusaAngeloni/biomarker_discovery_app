@@ -31,126 +31,165 @@ Outputs
 # Config
 # ============================================================
 import time
-import pandas as pd
-import requests
 from pathlib import Path
+import pandas as pd
 import mygene
-mg = mygene.MyGeneInfo()
 
 # ============================================================
 # Data Dir
 # ============================================================
+
 ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR  = ROOT / "data" / "raw"
-MANIFEST_PATH = DATA_DIR/ "manifest_clean.parquet"
-OUTPUT_PATH   = DATA_DIR/ "gene_map.parquet"
-BATCH_SIZE    = 1000   # mygene.info acepta hasta 1000 por request
-SPECIES       = "human"
+DATA_DIR = ROOT / "data" / "raw"
+
+MANIFEST_PATH = DATA_DIR / "manifest_clean.parquet"
+OUTPUT_PATH = DATA_DIR / "gene_map.parquet"
+
+BATCH_SIZE = 1000
+SPECIES = "human"
+
+mg = mygene.MyGeneInfo()
 
 # ============================================================
-# Extract unique gene symbols from the manifest 
+# Load manifest genes
 # ============================================================
-print("Cargando manifest...")
-manifest = pd.read_parquet(MANIFEST_PATH, columns=["gene"])
 
-# ── Split por ';' ─────────────────────────────────────────────────────────────
+print("Loading manifest...")
+
+manifest = pd.read_parquet(
+    MANIFEST_PATH,
+    columns=["gene"]
+)
+
 symbols = (
     manifest["gene"]
     .dropna()
+    .astype(str)
     .str.split(";")
     .explode()
     .str.strip()
     .loc[lambda s: s != ""]
-    .unique()
+    .drop_duplicates()
     .tolist()
 )
-print(f"  Símbolos únicos en manifest: {len(symbols):,}")
 
-# ── Query mygene.info in batches ──────────────────────────────────────────────
+print(f"Unique gene symbols in manifest: {len(symbols):,}")
 
-def query_mygene_batch(symbols_batch: list) -> list[dict]:
-    """
-    Consult mygene.info for a batch of gene symbols.
-    """
-    url = "https://mygene.info/v3/querymany"
-    body = {
-        "queries": symbols_batch,
-        "scopes": "symbol",
-        "fields": "symbol,ensembl.gene,entrezgene,type_of_gene",
-        "species": "human",
-        "size": 1,
-        "dotfield": True,
-    }
-    resp = requests.post(url, json=body, timeout=60)
-    resp.raise_for_status()
-    return resp.json()
+# ============================================================
+# Query MyGene.info
+# ============================================================
 
 records = []
-n_batches = (len(symbols) + BATCH_SIZE - 1) // BATCH_SIZE
 
-print(f"\nConsulting mygene.info ({n_batches} batches of {BATCH_SIZE})...")
+n_batches = (
+    len(symbols) + BATCH_SIZE - 1
+) // BATCH_SIZE
+
+print(
+    f"\nQuerying MyGene.info: "
+    f"{n_batches} batches of {BATCH_SIZE}"
+)
 
 for i in range(n_batches):
-    batch = symbols[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
-    print(f"  Batch {i+1}/{n_batches}...", end="\r")
+
+    batch = symbols[
+        i * BATCH_SIZE : (i + 1) * BATCH_SIZE
+    ]
+
+    print(
+        f"Batch {i + 1}/{n_batches}",
+        end="\r"
+    )
 
     try:
         results = mg.querymany(
             batch,
-            scopes="symbol",
-            fields="ensembl.gene,symbol",
-            species="human",
-            as_dataframe=False
+            scopes="symbol,alias,prev_symbol",
+            fields="symbol,ensembl.gene,entrezgene,type_of_gene",
+            species=SPECIES,
+            as_dataframe=False,
+            returnall=False,
+            verbose=False
         )
-    except Exception as e:
-        print(f"\n  ⚠ Error in batch {i+1}: {e}")
-        time.sleep(5)
 
-    results = mg.querymany(
-        batch,
-        scopes="symbol",
-        fields="ensembl.gene,symbol",
-        species="human",
-        as_dataframe=False
-    )
+    except Exception as e:
+        print(f"\nWARNING: error in batch {i + 1}: {e}")
+        time.sleep(5)
+        continue
 
     for hit in results:
-        # Ignore hits without match or Ensembl
-        if hit.get("notfound") or "ensembl" not in hit:
-            continue
-        symbol = hit.get("symbol", hit.get("query", ""))
-        ensembl_data = hit.get("ensembl")
-        if not ensembl_data:
+
+        if hit.get("notfound"):
             continue
 
-        # Like dict or list
+        # Original query symbol from manifest.
+        # This is the symbol we must preserve for later merge.
+        query_symbol = hit.get("query")
+
+        # Current/official symbol returned by MyGene.info.
+        official_symbol = hit.get(
+            "symbol",
+            query_symbol
+        )
+
+        ensembl_data = hit.get("ensembl")
+
+        if not query_symbol or not ensembl_data:
+            continue
+
         if isinstance(ensembl_data, dict):
             ensembl_data = [ensembl_data]
-        ensembl_list = []
+
         for item in ensembl_data:
-            gene_id = item.get("gene")
-            if gene_id:
-                ensembl_list.append(gene_id)
-        for eid in ensembl_list:
+
+            ensembl_id = item.get("gene")
+
+            if not ensembl_id:
+                continue
+
             records.append({
-                "gene_symbol": symbol,
-                "ensembl_id":  eid,   # without version: ENSG00000XXXXXX
+                "gene_symbol": query_symbol,
+                "official_symbol": official_symbol,
+                "ensembl_id": ensembl_id
             })
-    time.sleep(0.1)  # rate limit
 
-print(f"\n  Hits with Ensembl: {len(records):,}")
+    time.sleep(0.1)
+
 
 # ============================================================
-# Save
+# Build output table
 # ============================================================
+
 gene_map = (
     pd.DataFrame(records)
     .drop_duplicates()
     .reset_index(drop=True)
 )
 
-print(f"  Unique pared symbol↔ensembl: {len(gene_map):,}")
-print(f"  Preview:\n{gene_map.head(5).to_string()}\n")
+print(f"\nHits with Ensembl: {len(gene_map):,}")
 
-gene_map.to_parquet(OUTPUT_PATH, index=False, compression="zstd")
-print(f"✓ Saved: {OUTPUT_PATH}")
+print(
+    "Unique manifest symbols mapped: "
+    f"{gene_map['gene_symbol'].nunique():,}"
+)
+
+print(
+    "Unique Ensembl IDs: "
+    f"{gene_map['ensembl_id'].nunique():,}"
+)
+
+print("\nPreview:")
+print(gene_map.head(10).to_string(index=False))
+
+
+# ============================================================
+# Save
+# ============================================================
+
+gene_map.to_parquet(
+    OUTPUT_PATH,
+    index=False,
+    compression="zstd"
+)
+
+print(f"\nSaved: {OUTPUT_PATH}")

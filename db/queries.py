@@ -1,22 +1,23 @@
-#queries.py
+# db/queries.py
 
-from sqlalchemy import create_engine, text
+from __future__ import annotations
+
 import pandas as pd
+from sqlalchemy import text
+
+from db.db import get_engine
 
 
-DB_URL = (
-    "postgresql+psycopg2://"
-    "postgres:methy20@localhost:5432/db_methylation"
-)
+def run_query(query: str, params: dict | None = None) -> pd.DataFrame:
+    """
+    Run a SQL query and return the result as a pandas DataFrame.
+    """
 
-engine = create_engine(DB_URL)
-
-def run_query(query, params=None):
+    engine = get_engine()
 
     with engine.connect() as conn:
-
         return pd.read_sql(
             text(query),
             conn,
-            params=params
+            params=params,
         )

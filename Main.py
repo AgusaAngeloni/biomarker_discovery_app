@@ -9,9 +9,9 @@ st.set_page_config(
 st.title("Cancer Methylation Explorer")
 
 st.markdown("""
-Bienvenido al portal de exploración de metilación.
+Welcome to the methylation exploration portal.
 
-Utilice el menú lateral para navegar entre los módulos:
+Use the side menu to navigate between modules:
 
 - Gene Explorer
 - Correlation Analysis

@@ -30,6 +30,7 @@ Outputs
 # ============================================================
 # Config
 # ============================================================
+from pathlib import Path
 import pandas as pd
 
 # ============================================================
@@ -38,8 +39,8 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR  = ROOT / "data" / "raw"
 MANIFEST_PATH    = DATA_DIR/"manifest_clean.parquet"
-GENE_MAP_PATH    = DATA_DIR/"data/raw/gene_map.parquet"
-OUTPUT_PATH      = DATA_DIR/"data/raw/cpg_gene_map.parquet"
+GENE_MAP_PATH    = DATA_DIR/"gene_map.parquet"
+OUTPUT_PATH      = DATA_DIR/"cpg_gene_map.parquet"
 
 # ============================================================
 # Download

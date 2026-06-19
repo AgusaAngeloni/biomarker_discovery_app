@@ -47,11 +47,11 @@ from scipy import stats
 # ============================================================
 ROOT = Path(__file__).resolve().parent.parent
 RAW_DIR         = ROOT / "data" / "raw"
-METHY_PATH      = ROOT /RAW_DIR /"methy.parquet"
+METHY_PATH      = ROOT /RAW_DIR / "methy.parquet"
 EXPR_PATH       = ROOT /RAW_DIR / "expr.parquet"
 PHENO_PATH      = ROOT /RAW_DIR / "pheno_clean.parquet"
 CPG_GENE_PATH   = ROOT /RAW_DIR / "cpg_gene_map.parquet"
-OUTPUT_DIR      = Path(ROOT /RAW_DIR /"correlations_tumor")
+OUTPUT_DIR      = Path(ROOT / "data" /"correlations_tumor")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 COHORTS         = ["COAD", "LUSC", "LIHC","LUAD"]
@@ -101,7 +101,7 @@ print(f"\nMethy: {pf_methy.metadata.num_rows:,} probes | {n_rg} row groups")
 # ============================================================
 print("\nLoading expresión")
 pf_expr    = pq.ParquetFile(EXPR_PATH)
-expr_cols  = pf_methy.schema_arrow.names  # parquet column names expr
+expr_cols = pf_expr.schema_arrow.names  # parquet column names expr
 
 # Detect gene column in expr
 gene_col_expr = pf_expr.schema_arrow.names[0]  # assume first column = gene id

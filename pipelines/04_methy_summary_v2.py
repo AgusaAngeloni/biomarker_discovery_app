@@ -91,11 +91,15 @@ def compute_stats(arr):
     return median, std, n_valid.astype(np.int32)
 
 def main():
+    print(f"Loading phenotype")
     pheno = load_pheno()
     groups = classify_samples(pheno)
+    print(f"Loading methylation")
     pf = pq.ParquetFile(METHY_PATH)
     methy_cols = set(pf.schema_arrow.names)
+
     for cohort in COHORTS:
+        print(f"Procesing {cohort}:")
         cohort_tumor = set(groups[cohort]["tumor"])
         cohort_normal = set(groups[cohort]["normal"])
         group_cols = {
@@ -121,7 +125,7 @@ def main():
             grp: {
                 "median": [],
                 "std": [],
-                "n_valid": []
+                "_n": []
             }
             for grp in group_cols
         }
@@ -141,7 +145,7 @@ def main():
                 median, std, n_valid = compute_stats(arr)
                 acc[grp]["median"].append(median)
                 acc[grp]["std"].append(std)
-                acc[grp]["n_valid"].append(n_valid)
+                acc[grp]["_n"].append(n_valid)
             del df
             gc.collect()
         out = pd.DataFrame({
@@ -154,11 +158,20 @@ def main():
             out[f"{grp}_std"] = np.concatenate(
                 acc[grp]["std"]
             )
-            out[f"{grp}_n_valid"] = np.concatenate(
-                acc[grp]["n_valid"]
+            out[f"{grp}_n"] = np.concatenate(
+                acc[grp]["_n"]
             )
         out["delta_median"] = (
             out["tumor_median"] - out["normal_median"]
+        ).astype(np.float32)
+        denominator = np.sqrt(
+            out["tumor_std"] ** 2 + out["normal_std"] ** 2
+        )
+
+        out["HI_index"] = np.where(
+            denominator > 0,
+            np.abs(out["delta_median"]) / denominator,
+            np.nan
         ).astype(np.float32)
         out.to_parquet(
             OUTPUT_DIR / f"{cohort}_summary.parquet",

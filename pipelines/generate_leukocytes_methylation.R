@@ -42,7 +42,6 @@
 # - dplyr
 # - arrow
 #
-# Author: Agustina Angeloni
 ############################################################
 
 # ---- Install and load required packages ----
@@ -83,5 +82,5 @@ betasAllLeucosdf$site_id <- rownames(
 
 write_parquet(
   betasAllLeucosdf,
-  "data/methy_leucocyte.parquet"
+  "data/raw/methy_leucocyte.parquet"
 )
