@@ -551,6 +551,7 @@ def load_filtered_candidate_region_cpgs_for_gene(
     min_delta: float,
     max_normal_median: float,
     max_pan_normal_median: float,
+    max_pan_tumor_median: float,
     max_leukocyte: float,
     min_hi: float,
 ) -> pd.DataFrame:
@@ -735,6 +736,7 @@ def load_filtered_candidate_region_cpgs_for_gene(
                 AND ts.delta_median >= :min_delta
                 AND ts.normal_median <= :max_normal_median
                 AND COALESCE({pan_normal_expr}, 1) <= :max_pan_normal_median
+                AND COALESCE({pan_tumor_expr}, 1) <= :max_pan_tumor_median
                 AND COALESCE({leukocyte_select.split(" AS ")[0]}, 1) <= :max_leukocyte
                 AND COALESCE({hi_expr}, 0) >= :min_hi
         )
@@ -752,6 +754,7 @@ def load_filtered_candidate_region_cpgs_for_gene(
             "min_delta": float(min_delta),
             "max_normal_median": float(max_normal_median),
             "max_pan_normal_median": float(max_pan_normal_median),
+            "max_pan_tumor_median": float(max_pan_tumor_median),
             "max_leukocyte": float(max_leukocyte),
             "min_hi": float(min_hi),
         },
@@ -1143,7 +1146,15 @@ candidate_max_normal_median = st.sidebar.slider(
 )
 
 candidate_max_pan_normal_median = st.sidebar.slider(
-    "Candidate max PanCancer NT",
+    "Candidate max PanCancer",
+    0.0,
+    1.0,
+    0.08,
+    0.01,
+)
+
+candidate_max_pan_tumor_median = st.sidebar.slider(
+    "Candidate max PanCancer T",
     0.0,
     1.0,
     0.08,
@@ -1220,6 +1231,7 @@ if show_filtered_candidate_regions:
             min_delta=candidate_min_delta,
             max_normal_median=candidate_max_normal_median,
             max_pan_normal_median=candidate_max_pan_normal_median,
+            max_pan_tumor_median=candidate_max_pan_tumor_median,
             max_leukocyte=candidate_max_leukocyte,
             min_hi=candidate_min_hi,
         )

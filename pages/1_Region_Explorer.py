@@ -275,6 +275,7 @@ def load_region_candidate_cpgs(
     min_delta: float,
     max_normal_median: float,
     max_pan_normal_median: float,
+    max_pan_tumor_median: float,
     max_leukocyte: float,
     min_hi: float,
 ) -> pd.DataFrame:
@@ -282,6 +283,12 @@ def load_region_candidate_cpgs(
     r_cols = get_table_columns("biomarker_region")
 
     hi_expr = sql_col("ts", ts_cols, ["hi_index", "dispersion_index", "HI_index"], "NULL")
+    pan_tumor_expr = sql_col(
+        "ts",
+        ts_cols,
+        ["pan_tumor_median", "pantumor_median", "panTumor_median"],
+        "NULL",
+    )
     pan_normal_expr = sql_col(
         "ts",
         ts_cols,
@@ -314,6 +321,7 @@ def load_region_candidate_cpgs(
         ts.tumor_type,
         ts.delta_median,
         ts.normal_median,
+        {pan_tumor_expr} AS pan_tumor_median,
         {pan_normal_expr} AS pan_normal_median,
         {hi_expr} AS hi_index,
         cf.leukocyte_median,
@@ -335,6 +343,7 @@ def load_region_candidate_cpgs(
         AND ts.delta_median >= :min_delta
         AND ts.normal_median <= :max_normal_median
         AND COALESCE({pan_normal_expr}, 1) <= :max_pan_normal_median
+        AND COALESCE({pan_tumor_expr}, 1) <= :max_pan_tumor_median
         AND COALESCE(cf.leukocyte_median, 1) <= :max_leukocyte
         AND COALESCE({hi_expr}, 0) >= :min_hi
     ORDER BY ts.delta_median DESC
@@ -345,6 +354,7 @@ def load_region_candidate_cpgs(
         "min_delta": float(min_delta),
         "max_normal_median": float(max_normal_median),
         "max_pan_normal_median": float(max_pan_normal_median),
+        "max_pan_tumor_median": float(max_pan_tumor_median),
         "max_leukocyte": float(max_leukocyte),
         "min_hi": float(min_hi),
     }
@@ -367,6 +377,7 @@ def aggregate_gene_regions(cpgs: pd.DataFrame, apply_expression_filter: bool) ->
             "start_pos",
             "delta_median",
             "normal_median",
+            "pan_tumor_median",
             "pan_normal_median",
             "hi_index",
             "leukocyte_median",
@@ -391,6 +402,7 @@ def aggregate_gene_regions(cpgs: pd.DataFrame, apply_expression_filter: bool) ->
             mean_delta=("delta_median", "mean"),
             mean_hi=("hi_index", "mean"),
             mean_normal_median=("normal_median", "mean"),
+            mean_pan_tumor_median=("pan_tumor_median", "mean"),
             mean_pan_normal_median=("pan_normal_median", "mean"),
             mean_leukocyte_median=("leukocyte_median", "mean"),
             mean_spearman_r=("spearman_r", "mean"),
@@ -557,6 +569,7 @@ tumor_type = TUMOR_MAP[tumor_label]
 min_delta = st.sidebar.slider("Minimum Delta", 0.0, 1.0, 0.50, 0.01)
 max_normal_median = st.sidebar.slider("Max Median NT", 0.0, 1.0, 0.06, 0.01)
 max_pan_normal_median = st.sidebar.slider("Max Median PanCancer NT", 0.0, 1.0, 0.08, 0.01)
+max_pan_tumor_median = st.sidebar.slider("Max Median PanCancer T", 0.0, 1.0, 0.08, 0.01)
 max_leukocyte = st.sidebar.slider("Max Median Leukocytes", 0.0, 1.0, 0.05, 0.01)
 min_hi = st.sidebar.slider("Min HI", 0.0, 5.0, 1.60, 0.05)
 
@@ -580,6 +593,7 @@ cpgs = load_region_candidate_cpgs(
     min_delta=min_delta,
     max_normal_median=max_normal_median,
     max_pan_normal_median=max_pan_normal_median,
+    max_pan_tumor_median=max_pan_tumor_median,
     max_leukocyte=max_leukocyte,
     min_hi=min_hi,
 )
@@ -707,6 +721,7 @@ region_cols = [
     "mean_delta",
     "mean_hi",
     "mean_normal_median",
+    "mean_pan_tumor_median",
     "mean_pan_normal_median",
     "mean_leukocyte_median",
     "sequence_site_score",
