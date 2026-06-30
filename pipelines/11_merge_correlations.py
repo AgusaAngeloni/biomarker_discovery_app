@@ -91,7 +91,7 @@ final_df = final_df[
         #"ensembl_id",
         #"gene_symbol",
         "spearman_r",
-        #"pvalue",
+        "pvalue",
         "n_samples",
     ]
 ]
@@ -106,7 +106,7 @@ final_df = final_df.astype({
     #"ensembl_id": "string",
     #"gene_symbol": "string",
     "spearman_r": "float32",
-    #"pvalue": "float32",
+    "pvalue": "float32",
     "n_samples": "int32",
 })
 

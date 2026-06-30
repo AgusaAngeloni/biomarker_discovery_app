@@ -87,14 +87,14 @@ final_df = final_df[
         "normal_median",
         "normal_std",   
         "normal_n",       
-        "panTumor_median", 
-        "panTumor_std",    
-        "panTumor_n",      
-        "panNormal_median",  
-        "panNormal_std",    
-        "panNormal_n",       
+        "pan_tumor_median", 
+        "pan_tumor_std",    
+        "pan_tumor_n",      
+        "pan_normal_median",  
+        "pan_normal_std",    
+        "pan_normal_n",       
         "delta_median",     
-        "HI_index",         
+        "hi_index",         
     ]
 ]
 
@@ -110,14 +110,14 @@ final_df = final_df.astype({
         "normal_median":"float32",
         "normal_std":"float32",
         "normal_n":"int32",  
-        "panTumor_median":"float32",
-        "panTumor_std":"float32",
-        "panTumor_n":"int32",  
-        "panNormal_median":"float32",
-        "panNormal_std":"float32",
-        "panNormal_n":"int32",  
+        "pan_tumor_median":"float32",
+        "pan_tumor_std":"float32",
+        "pan_tumor_n":"int32",  
+        "pan_normal_median":"float32",
+        "pan_normal_std":"float32",
+        "pan_normal_n":"int32",  
         "delta_median":"float32",
-        "HI_index": "float32"
+        "hi_index": "float32"
 })
 
 

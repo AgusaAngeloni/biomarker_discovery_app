@@ -13,6 +13,7 @@ Welcome to the methylation exploration portal.
 
 Use the side menu to navigate between modules:
 
+- Region Explorer
 - Gene Explorer
-- Correlation Analysis
+
 """)

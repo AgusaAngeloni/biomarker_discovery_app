@@ -1,5 +1,3 @@
-#requirements
-
 streamlit
 pandas
 numpy
@@ -7,3 +5,10 @@ plotly
 sqlalchemy
 psycopg2-binary
 pyarrow
+scipy
+statsmodels
+requests
+mygene
+gtfparse
+python-dotenv
+openpyxl

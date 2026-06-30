@@ -49,9 +49,13 @@ data/summary/
 *.gz
 *.zip
 *.IDAT
+*.fa
+*.fa.fai
+*.json
 
 # =========================
 # Logs
 # =========================
 *.log
 logs/t
+db/.Rhistory

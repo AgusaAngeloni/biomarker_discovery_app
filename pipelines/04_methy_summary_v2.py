@@ -105,11 +105,11 @@ def main():
         group_cols = {
             "tumor": [s for s in groups[cohort]["tumor"] if s in methy_cols],
             "normal": [s for s in groups[cohort]["normal"] if s in methy_cols],
-            "panTumor": [
+            "pan_tumor": [
                 s for s in groups["_all"]["tumor"]
                 if s in methy_cols and s not in cohort_tumor
             ],
-            "panNormal": [
+            "pan_normal": [
                 s for s in groups["_all"]["normal"]
                 if s in methy_cols and s not in cohort_normal
             ]
@@ -168,7 +168,7 @@ def main():
             out["tumor_std"] ** 2 + out["normal_std"] ** 2
         )
 
-        out["HI_index"] = np.where(
+        out["hi_index"] = np.where(
             denominator > 0,
             np.abs(out["delta_median"]) / denominator,
             np.nan
