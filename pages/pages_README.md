@@ -1,28 +1,39 @@
-# Streamlit pages
+# Streamlit Pages README
 
-This folder contains the interactive pages of the MethyMarker app.
+This folder contains the interactive Streamlit pages for the MethyMarker biomarker discovery app.
 
-The current app logic is **region-first**. CpG sites are still the biological evidence unit, but the main candidate objects shown to the user are now **physical CpG regions** generated from the manifest and linked to tumor-specific CpG evidence through PostgreSQL.
-
-## Current page workflow
+The current application logic is **region-first**:
 
 ```text
-CpG-level methylation evidence
+CpG-level tumor evidence
         ↓
-Physical region model
+Physical CpG region model
         ↓
-Sequence context score
+Sequence-context score
         ↓
 Interactive region prioritization
         ↓
-Gene-level inspection and sequence browser
+Gene-level validation and sequence inspection
 ```
 
-The pages should not load whole database tables into memory. They should query PostgreSQL dynamically using the filters selected by the user.
+CpG sites remain the biological evidence unit, but the final user-facing candidate object is a **physical CpG region**.
+
+---
+
+## Active pages
+
+```text
+pages/
+├── 1_Region_Explorer.py
+├── 2_Gene_Explorer.py
+└── pages_README.md
+```
+
+---
 
 ## Required PostgreSQL tables
 
-The pages assume that the normalized database model has already been loaded.
+The pages are designed to query PostgreSQL dynamically instead of loading whole Parquet files.
 
 ### Base tables
 
@@ -37,60 +48,82 @@ sample_metadata
 tumor_types
 ```
 
-### Biomarker / region tables
+### Region / biomarker tables
 
 ```text
-biomarker_cpg_score
 biomarker_region
 biomarker_region_cpg
 biomarker_region_sequence_score
+biomarker_cpg_score
 ```
 
-`tumor_summary` should use the standardized column name:
+`tumor_summary` should expose the standardized names:
 
 ```text
 hi_index
+pan_tumor_median
+pan_normal_median
 ```
 
-not `HI_index`.
+Compatibility aliases such as `dispersion_index`, `HI_index`, `pantumor_median`, `pannormal_median`, `panTumor_median`, and `panNormal_median` may be handled by the page code, but the preferred schema uses the standardized names above.
 
 ---
 
 ## `1_Region_Explorer.py`
 
-Region-level candidate exploration page.
-
 ### Purpose
 
-This page starts from CpG-level tumor filters and aggregates the matching CpGs into physical candidate regions. Each plotted point represents **one physical region**, not one CpG site.
+`1_Region_Explorer.py` is the global candidate-prioritization page. It starts from tumor-specific CpG filters and aggregates qualifying CpGs into physical candidate regions.
 
-The page is intended for global region prioritization across genes and tumor types.
+Each plotted point represents:
 
-### Main filters
+```text
+one physical CpG region
+```
+
+not one CpG site.
+
+This page is intended to answer:
+
+- Which regions have multiple tumor-specific CpGs?
+- Which regions are low in normal tissue and leukocytes?
+- Which regions have high tumor heterogeneity or dispersion?
+- Which regions have favorable sequence context?
+- Which regions show inverse methylation-expression association?
+
+---
+
+## Main sidebar filters
 
 Typical filters include:
 
-- Tumor type
-- Minimum `delta_median`
-- Maximum `normal_median`
-- Maximum pan-cancer normal methylation
-- Maximum leukocyte methylation
-- Minimum `hi_index`
-- Optional expression filter based on negative Spearman correlation
+```text
+Tumor type
+Minimum delta_median
+Maximum normal_median
+Maximum pan_normal_median
+Maximum leukocyte_median
+Minimum hi_index
+Optional expression filter using mean Spearman r
+```
 
-### Region aggregation logic
+The filters are applied at the CpG-evidence level. The passing CpGs are then aggregated into regions.
 
-The page joins CpG evidence with the normalized region model:
+---
+
+## Region aggregation logic
+
+The page joins:
 
 ```text
 tumor_summary
-    + cpg_annotation
-    + cpg_gene_map
-    + cpg_features
-    + expression_correlation
-    + biomarker_region_cpg
-    + biomarker_region
-    + biomarker_region_sequence_score
++ cpg_annotation
++ cpg_gene_map
++ cpg_features
++ expression_correlation
++ biomarker_region_cpg
++ biomarker_region
++ biomarker_region_sequence_score
 ```
 
 For each physical region, it summarizes:
@@ -106,20 +139,24 @@ mean_pan_normal_median
 mean_leukocyte_median
 mean_spearman_r
 sequence_score
+cpg_sites
 ```
 
-### Score logic
+The page preserves the original `biomarker_region.region_id` as the stable region identifier. Coordinate-derived labels are only auxiliary labels.
 
-The current region score is designed to favor regions with both:
+---
 
-1. multiple qualifying CpGs, and
-2. strong sequence context from pipeline 18.
+## Region score logic
+
+The base score favors regions with both strong sequence context and multiple qualifying CpGs:
 
 ```text
 sequence_site_score = sequence_score × n_qualifying_sites
 ```
 
-Expression is optional. When enabled:
+Expression is optional.
+
+When expression is enabled:
 
 ```text
 expression_signal = max(0, -mean_spearman_r)
@@ -133,179 +170,165 @@ When expression is disabled:
 final_region_score = sequence_site_score
 ```
 
-### Main plots
+Interpretation:
+
+- `sequence_score` is tumor-independent and comes from pipeline 15.
+- `n_qualifying_sites` is tumor/filter-dependent and comes from the selected Streamlit thresholds.
+- `mean_spearman_r` is tumor-specific and should ideally be negative for genes where methylation is associated with lower expression.
+
+---
+
+## Main plots
 
 The page shows three region-level bubble plots:
 
-1. **Bubble size = number of qualifying CpGs**  
-   Useful to identify regions supported by multiple tumor-specific CpGs.
+1. **DMR plot**
+   - X axis: mean HI index in the region
+   - Y axis: mean delta methylation
+   - Bubble size: number of qualifying CpGs
 
-2. **Bubble size = expression signal**  
-   Useful to identify regions where methylation is inversely associated with expression.
+2. **Expression plot**
+   - X axis: mean HI index in the region
+   - Y axis: mean delta methylation
+   - Bubble size: expression signal
 
-3. **Bubble size/color = final region score**  
-   Useful for region prioritization.
+3. **Final score plot**
+   - X axis: mean HI index in the region
+   - Y axis: mean delta methylation
+   - Bubble size: final region score
+   - Color: final region score
 
-All plots are exported as SVG through the Plotly toolbar.
+All plots are configured for SVG export through the Plotly toolbar.
 
-### Output table
+---
 
-The region candidate table includes the main biological, sequence, and score fields. It also includes `cpg_sites`, allowing the user to inspect which CpGs support each region.
+## Region candidate table
+
+The region table should include the fields needed for manuscript-oriented inspection:
+
+```text
+gene_region_id
+gene_main
+chr
+browser_start
+browser_end
+final_region_score
+sequence_score
+n_qualifying_sites
+n_manifest_cpgs
+fraction_qualifying_sites
+mean_delta
+mean_hi
+mean_normal_median
+mean_pan_normal_median
+mean_leukocyte_median
+mean_spearman_r
+expression_signal
+sequence_site_score
+cpg_sites
+region_ids
+```
+
+`cpg_sites` allows users to inspect which CpGs support the candidate region.
 
 ---
 
 ## `2_Gene_Explorer.py`
 
-Gene-level validation page with filtered candidate regions and sequence browser.
-
 ### Purpose
 
-This page focuses on one selected gene and tumor type. It keeps the gene methylation profile as the main visualization, but overlays only the **filtered physical candidate regions** that pass the selected thresholds.
+`2_Gene_Explorer.py` is the gene-level validation and sequence-inspection page.
 
-It does **not** require a precomputed `biomarker_candidate_region_curve` table or parquet file.
+It is intended to answer:
 
-### Main behavior
+- What is the full methylation profile of a selected gene?
+- Which physical regions overlap that gene?
+- Which candidate regions pass the selected tumor-specific filters?
+- Which CpGs support those regions?
+- What sequence context surrounds the selected region or site?
 
-For a selected gene, the page:
+---
 
-1. loads all CpGs mapped to the gene,
-2. plots the methylation profile across genomic position,
-3. applies candidate-region filters dynamically,
-4. marks filtered candidate regions on the methylation profile,
-5. lists candidate regions and candidate CpGs,
-6. opens a sequence browser for the selected candidate region.
+## Gene Explorer behavior
 
-### Candidate region filters
+For a selected tumor type and gene, the page:
 
-The sidebar includes region-candidate filters such as:
+1. loads all CpGs mapped to the selected gene;
+2. plots the complete methylation profile by genomic coordinate;
+3. overlays candidate physical regions;
+4. applies region-candidate filters dynamically;
+5. lists candidate regions and candidate CpGs;
+6. opens a sequence browser for a selected region or selected CpG site.
+
+The full gene methylation profile remains visible. Candidate regions are highlighted on top of that profile rather than replacing it.
+
+---
+
+## Gene-level methylation profile
+
+The profile typically includes:
 
 ```text
-Candidate minimum Delta
-Candidate max Median NT
-Candidate max PanCancer NT
-Candidate max Leukocytes
-Candidate min HI
-Optional candidate expression filter
+Tumor median methylation
+Normal median methylation
+Pan-cancer tumor median methylation
+Pan-cancer normal median methylation
+Leukocyte median methylation
+Delta methylation
+HI index
+Spearman expression correlation
 ```
 
-The filtered regions are calculated live from PostgreSQL using the normalized region tables.
+Candidate regions are shown as a visual track or highlighted interval on the same coordinate system.
 
-### Methylation profile
+---
 
-The main profile includes:
+## Candidate region filters in Gene Explorer
+
+The region filters mirror the logic of the Region Explorer:
 
 ```text
-Median Type T
-Median Type NT
-Median PanCan T
-Median PanCan NT
-Median Leukocytes
-Delta
-Optional HI
-Expression profile plot
+Candidate minimum delta_median
+Candidate maximum normal_median
+Candidate maximum pan_normal_median
+Candidate maximum leukocyte_median
+Candidate minimum hi_index
+Optional maximum Spearman r
 ```
 
-Candidate regions are shown as a blue track or dotted boundaries on top of the full-gene methylation profile. The curves are not restricted to the selected region; the full gene profile remains visible.
+The filtered regions are calculated live from PostgreSQL. No precomputed candidate-region curve table is required.
 
-### Region-level table
+---
 
-The region table summarizes candidate regions for the selected gene and tumor type.
+## Sequence browser
 
-Typical fields include:
-
-```text
-region_id
-region_gene_symbol
-chr
-core_start
-core_end
-browser_start
-browser_end
-n_qualifying_cpgs
-n_manifest_cpgs
-fraction_qualifying_cpgs
-sequence_score
-mean_delta
-max_delta
-mean_hi
-max_hi
-mean_tumor_median
-mean_normal_median
-mean_leukocyte_median
-mean_spearman_r
-qualifying_cpg_sites
-qualifying_cpg_positions
-```
-
-Selecting one row opens that region in the sequence browser.
-
-### Sequence browser
-
-The browser is region-based rather than CpG-centered.
-
-Available windows:
+The sequence browser is region-aware and can display:
 
 ```text
-browser       → browser_start/browser_end
-core          → core_start/core_end
-custom flank  → user-defined flank around the core region
+browser window: browser_start to browser_end
+core region: core_start to core_end
+custom flank: user-defined flank around the selected region or site
 ```
 
 The browser highlights:
 
-- manifest CpGs in the selected region,
-- the core region,
-- GCGC/CGCG motifs,
-- genomic coordinates,
-- downloadable SVG sequence view.
+- manifest CpGs;
+- the selected CpG or candidate region;
+- GCGC motifs;
+- nucleotide identity;
+- genomic coordinates.
 
-The browser is intended for sequence-level inspection of the candidate region after methylation-based filtering.
-
----
-
-## Optional / legacy pages
-
-### `3_Region_Universe_Browser.py`
-
-This page is useful for debugging or inspecting the full region universe produced by pipeline 16. It reads region-universe style data and opens a region sequence browser without requiring tumor-specific CpG filters.
-
-Use it when checking:
-
-- whether regions were generated correctly,
-- whether `browser_start/browser_end` are appropriate,
-- whether manifest CpGs are correctly located in the sequence,
-- whether GCGC/CGCG motifs are detected as expected.
-
-For the main analysis workflow, prefer:
-
-```text
-1_Region_Explorer.py
-2_Gene_Explorer.py
-```
-
----
-
-## Recommended analysis order
-
-```text
-1. Run preprocessing and load PostgreSQL.
-2. Run pipeline 14 to generate CpG biological scores.
-3. Run pipeline 16 to generate physical CpG regions.
-4. Run pipeline 18 to generate sequence scores per region.
-5. Rebuild/load PostgreSQL biomarker tables.
-6. Use 1_Region_Explorer.py to prioritize regions globally.
-7. Use 2_Gene_Explorer.py to inspect selected genes and candidate regions.
-```
+The sequence browser uses `services/ensembl.py` for sequence retrieval in the Streamlit page. Pipeline 15 uses a local FASTA to calculate the region sequence score.
 
 ---
 
 ## Design notes
 
 - PostgreSQL is the source of truth for the pages.
-- Pages should use SQL filters before loading data into pandas.
+- Pages should apply SQL filters before loading results into pandas.
 - CpG-level evidence should be aggregated into region-level summaries for prioritization.
-- Physical region IDs from `biomarker_region.region_id` should be preserved.
-- Coordinate-derived IDs may be used only as auxiliary labels.
-- Region visualizations should avoid duplicating regions caused by multiple gene annotations.
-- Sequence scores come from `biomarker_region_sequence_score`, generated by pipeline 18.
-- The final user-facing candidate object is a **region**, not an isolated CpG.
+- Physical `region_id` values from `biomarker_region` should be preserved.
+- Coordinate-derived IDs should only be auxiliary display labels.
+- Region visualizations should avoid duplicated physical regions caused by multi-gene annotations.
+- Sequence scores come from `biomarker_region_sequence_score`, generated by pipeline 15.
+- The final user-facing candidate object is a region, not an isolated CpG.

@@ -1,40 +1,46 @@
-# Methylation App
+# MethyMarker — Cancer Methylation Biomarker Discovery App
 
-Interactive and reproducible platform for the exploration of DNA methylation biomarkers across TCGA tumor cohorts, normal tissues, leukocyte reference profiles, and gene expression correlations.
+Interactive and reproducible platform for prioritizing DNA methylation biomarker candidates across TCGA tumor cohorts. The project integrates tumor/normal methylation summaries, pan-cancer background, leukocyte methylation reference profiles, CpG-to-gene annotation, methylation-expression correlation, physical CpG regions, and sequence-context scores into a PostgreSQL-backed Streamlit application.
 
-This repository contains the data-processing workflow, database-building scripts, and Streamlit application used to explore CpG methylation patterns at the probe, gene, tumor-type, and genomic-context levels. The project was designed to support biomarker prioritization and reproducible analysis for research publication.
+The current workflow is **region-first**. CpG sites remain the primary evidence unit, but the user-facing biomarker candidate is a **physical CpG region** supported by one or more qualifying CpGs.
 
 ---
 
 ## Project overview
 
-DNA methylation is an epigenetic mechanism frequently altered in cancer. In this project, TCGA methylation beta-values were processed together with phenotype metadata, CpG annotation, leukocyte methylation profiles, and RNA-seq expression data. The resulting processed datasets are integrated into a PostgreSQL database and queried through an interactive Streamlit application.
+DNA methylation is frequently altered in cancer and can provide candidate biomarkers when tumor specificity, normal-tissue background, leukocyte background, gene context, expression association, and local sequence structure are considered together.
 
-The application allows users to explore:
+This repository contains:
 
-- CpG-level methylation differences between tumor and normal tissues.
-- Tissue-specific and pan-cancer methylation patterns.
-- Delta methylation values between tumor and normal samples.
-- Dispersion-based prioritization of CpG sites.
-- Leukocyte methylation background levels.
-- CpG-to-gene relationships.
-- Methylation-expression correlations in tumor samples.
-- Gene-centered and CpG-centered visualizations.
+- reproducible preprocessing pipelines;
+- derived Parquet tables;
+- a PostgreSQL schema/loading script;
+- Streamlit pages for region-level prioritization and gene-level inspection.
 
-The workflow emphasizes reproducibility by keeping all data-processing steps scripted and documented.
+The application supports:
+
+- tumor-vs-normal methylation comparison;
+- pan-cancer background comparison;
+- leukocyte methylation filtering;
+- CpG-to-gene mapping;
+- methylation-expression correlation;
+- physical CpG-region aggregation;
+- sequence-context scoring using CG/GCGC/GC features;
+- interactive candidate prioritization for paper-oriented biomarker discovery.
 
 ---
 
 ## Repository structure
 
 ```text
-methylation_app/
+biomarker_discovery_app/
 │
-├── app.py
+├── Main.py
 │
 ├── pages/
-│   ├── 1_CpG_Explorer.py
-│   └── 2_Gene_Explorer.py
+│   ├── 1_Region_Explorer.py
+│   ├── 2_Gene_Explorer.py
+│   └── pages_README.md
 │
 ├── pipelines/
 │   ├── generate_leukocytes_methylation.R
@@ -43,6 +49,7 @@ methylation_app/
 │   ├── 03_methy_download_clean_v2.py
 │   ├── 04_methy_summary_v2.py
 │   ├── 05_merge_methy_summary.py
+│   ├── 06_build_gene_annotation.py
 │   ├── 07_build_gene_map.py
 │   ├── 08_build_cpg_gene_map.py
 │   ├── 09_build_expr_parquet.py
@@ -50,535 +57,276 @@ methylation_app/
 │   ├── 11_merge_correlations.py
 │   ├── 12_build_cpg_feature.py
 │   ├── 13_generate_tumor_types.py
-│   ├── build_potgres.py
-│   └── README.md
+│   ├── 14_build_biomarker_regions.py
+│   ├── 15_add_sequence_features_to_regions.py
+│   ├── build_postgres.py
+│   └── pipelines_README.md
 │
 ├── db/
-│   ├── schema.sql
-│   ├── database.py
-│   └── queries.py
+│   ├── db.py
+│   ├── queries.py
+│   └── db_README.md
 │
 ├── data/
 │   ├── raw/
 │   ├── summary/
 │   ├── correlations_tumor/
+│   ├── biomarkers/
+│   ├── reference/
 │   └── geo/
 │       └── IDATS/
 │
 ├── services/
 │   └── ensembl.py
 │
-├── .streamlit/
-│   └── secrets.toml
-│
-├── .gitignore
-├── README.md
 ├── requirements.txt
-└── environment.yml
+├── environment.yml
+├── env.example
+├── schema.sql
+├── schema_neon.sql
+└── README.md
 ```
+
+Large raw and intermediate data files are not expected to be versioned in Git. They should be downloaded or generated locally and stored under `data/`.
 
 ---
 
 ## Data sources
 
-This workflow integrates publicly available methylation, phenotype, gene expression, and annotation resources.
-
-| Data type | Source | Description |
+| Data layer | Source | Role in the app |
 |---|---|---|
-| TCGA phenotype metadata | UCSC Xena / GDC Pan-Cancer | Sample classification, project ID, sex, age, tumor type and tissue class. |
-| TCGA methylation | UCSC Xena / GDC Pan-Cancer | Illumina HumanMethylation450K beta-value matrix. |
-| TCGA expression | UCSC Xena / GDC Pan-Cancer | HTSeq FPKM-UQ RNA-seq expression matrix. |
-| CpG annotation | Zhou Lab Infinium Annotation | HumanMethylation450K manifest mapped to hg38 and GENCODE v36. |
-| Leukocyte methylation | GEO IDAT files | Leukocyte beta-values generated from raw IDAT files using the `sesame` R package. |
-| Gene identifiers | MyGene.info | Gene symbol to Ensembl Gene ID conversion. |
-| Sequence information | Ensembl REST API | Genomic sequence retrieval for gene and CpG visualization. |
-
-Raw large files are not expected to be stored directly in the Git repository. They should be downloaded or generated by the scripts and saved under `data/`.
+| TCGA phenotype metadata | UCSC Xena / GDC Pan-Cancer | Defines tumor type, tissue class, sample type, and patient/sample IDs. |
+| TCGA methylation | UCSC Xena / GDC Pan-Cancer HumanMethylation450K | Provides CpG beta-values used for tumor/normal and pan-cancer summaries. |
+| TCGA expression | UCSC Xena / GDC Pan-Cancer RNA-seq | Used to estimate methylation-expression association for CpG-gene pairs. |
+| CpG annotation | HumanMethylation450K manifest mapped to hg38 | Provides CpG IDs, genomic coordinates, gene annotations, and CpG island context. |
+| Leukocyte methylation | GEO IDAT files processed with `sesame` | Provides a blood-cell background filter for biomarker specificity. |
+| Gene annotation | GENCODE / Ensembl-derived annotation | Provides gene coordinates, strand, TSS, and gene symbols. |
+| DNA sequence | Local hg38 FASTA | Used to compute sequence-context features for physical CpG regions. |
 
 ---
 
-## Data-processing workflow
-
-The complete workflow is divided into modular scripts. Each script produces an intermediate file that is used by subsequent steps.
+## Conceptual workflow
 
 ```text
-CpG manifest annotation
+Raw public datasets and annotation
         ↓
-TCGA phenotype metadata cleaning
+Clean CpG manifest and TCGA phenotype metadata
         ↓
-TCGA methylation matrix filtering
+Filter TCGA methylation beta-value matrix
         ↓
-Tumor/normal methylation summary statistics
+Compute tumor/normal and pan-cancer CpG summaries
         ↓
-Pan-cancer summary table
+Build gene annotation and CpG-to-gene maps
         ↓
-Gene symbol to Ensembl mapping
+Preprocess expression and compute CpG-gene correlations
         ↓
-CpG-to-gene mapping
+Generate leukocyte methylation background features
         ↓
-TCGA expression matrix preprocessing
+Build tumor-independent physical CpG regions
         ↓
-CpG-expression correlation analysis
+Add tumor-independent sequence-context features
         ↓
-Leukocyte methylation feature generation
+Load normalized tables into PostgreSQL
         ↓
-PostgreSQL database construction
+Prioritize candidate regions in Streamlit
         ↓
-Streamlit application
+Inspect selected genes, regions, CpGs, and sequence context
 ```
 
----
-
-## Pipeline scripts
-
-### `generate_leukocytes_methylation.R`
-Generates leukocyte methylation beta-value tables from raw GEO IDAT files using the `sesame` package.
-
-**Input:**
-- Raw IDAT files located in `data/geo/IDATS/`.
-
-**Output:**
-- Processed leukocyte methylation matrix used as input for leukocyte CpG feature calculation.
-
-**Purpose:**
-To incorporate leukocyte methylation background as an additional reference layer for biomarker prioritization.
+The separation between **physical region definition**, **sequence-context scoring**, and **tumor-specific evidence** is intentional. It avoids using tumor behavior to define the genomic universe and makes the model easier to explain in a manuscript.
 
 ---
 
-### `01_clean_manifiesto.py`
-Downloads and preprocesses the Illumina HumanMethylation450K annotation manifest.
+## Main derived outputs
 
-**Input:**
-- HumanMethylation450K hg38 manifest from Zhou Lab Infinium Annotation.
-
-**Processing:**
-- Keeps relevant annotation fields.
-- Retains CpG probes only.
-- Removes probes from chromosomes X, Y and mitochondrial DNA.
-- Removes probes without chromosome or gene annotation.
-- Standardizes column names and coordinate fields.
-
-**Output:**
-- `data/raw/manifest_clean.parquet`
-
----
-
-### `02_clean_phenotype.py`
-Downloads and cleans TCGA phenotype metadata.
-
-**Input:**
-- `GDC-PANCAN.basic_phenotype.tsv`
-
-**Processing:**
-- Keeps TCGA samples only.
-- Retains primary tumor samples (`01A`) and solid tissue normal samples (`11A`).
-- Generates `patient_id` from TCGA sample identifiers.
-- Standardizes tumor type, tissue type, sex, age and sample class variables.
-
-**Output:**
-- `data/raw/pheno_clean.parquet`
-
----
-
-### `03_methy_download_clean_v2.py`
-
-Downloads and filters the TCGA methylation beta-value matrix.
-
-**Input:**
-- `GDC-PANCAN.methylation450.tsv`
-- `manifest_clean.parquet`
-- `pheno_clean.parquet`
-
-**Processing:**
-- Processes the methylation matrix in chunks to reduce memory usage.
-- Keeps only CpGs present in the cleaned manifest.
-- Keeps only samples present in the cleaned phenotype table.
-- Does not remove CpGs based on missing values at this step.
-
-**Output:**
-
-- `data/raw/methy.parquet`
-
----
-
-### `04_methy_summary_v2.py`
-Computes cohort-level methylation summary statistics.
-
-**Input:**
-- `methy.parquet`
-- `pheno_clean.parquet`
-
-**Processing:**
-For each selected cohort, the script computes CpG-level statistics for:
-
-- Tumor samples from the selected cohort.
-- Normal samples from the selected cohort.
-- Pan-cancer tumor samples, excluding the selected cohort.
-- Pan-cancer normal samples, excluding the selected cohort.
-
-For each group, the following statistics are calculated:
-
-- Median beta-value.
-- Standard deviation.
-- Number of valid observations.
-
-A minimum valid fraction is applied before retaining summary statistics.
-
-**Output:**
-- `data/summary/{COHORT}_summary.parquet`
-
----
-
-### `05_merge_methy_summary.py`
-Merges cohort-specific methylation summaries into a unified pan-cancer table.
-
-**Input:**
-- `data/summary/*_summary.parquet`
-
-**Processing:**
-- Loads all cohort summary files.
-- Adds tumor type metadata.
-- Concatenates tables.
-- Standardizes output column names and data types.
-
-**Output:**
-- `data/raw/methylation_summary.parquet`
-
----
-
-### `07_build_gene_map.py`
-Builds a gene identifier conversion table.
-
-**Input:**
-- `manifest_clean.parquet`
-
-**Processing:**
-- Extracts unique gene symbols from the manifest.
-- Queries MyGene.info to retrieve Ensembl Gene IDs.
-- Removes duplicated mappings.
-
-**Output:**
-- `data/raw/gene_map.parquet`
-
-**Output columns:**
-- `gene_symbol`
-- `ensembl_id`
-
----
-
-### `08_build_cpg_gene_map.py`
-Builds a CpG-to-gene mapping table.
-
-**Input:**
-- `manifest_clean.parquet`
-- `gene_map.parquet`
-
-**Processing:**
-
-- Expands CpGs annotated to multiple genes.
-- Generates unique CpG-gene pairs.
-- Adds Ensembl Gene IDs.
-
-**Output:**
-
-- `data/raw/cpg_gene_map.parquet`
-
-**Output columns:**
-
-- `site_id`
-- `gene_symbol`
-- `ensembl_id`
-
----
-
-### `09_build_expr_parquet.py`
-Downloads and preprocesses TCGA RNA-seq expression data.
-
-**Input:**
-
-- `GDC-PANCAN.htseq_fpkm-uq.tsv`
-- `pheno_clean.parquet`
-- `cpg_gene_map.parquet`
-
-**Processing:**
-
-- Keeps valid TCGA samples.
-- Keeps only genes associated with CpGs in the methylation workflow.
-- Removes Ensembl version numbers.
-- Applies `log2(FPKM-UQ + 1)` transformation.
-- Stores values as `float32` to reduce file size.
-
-**Output:**
-
-- `data/raw/expr.parquet`
-
----
-
-### `10_cpg_expression_corr_tumor.py`
-Computes methylation-expression correlations in tumor samples.
-
-**Input:**
-
-- `methy.parquet`
-- `expr.parquet`
-- `pheno_clean.parquet`
-- `cpg_gene_map.parquet`
-
-**Processing:**
-
-- Selects tumor samples by cohort.
-- Matches methylation beta-values and expression values using shared sample IDs.
-- Computes Spearman correlation for each CpG-gene pair.
-- Stores the correlation coefficient, p-value and number of samples.
-
-**Output:**
-
-- `data/correlations_tumor/{COHORT}_Tumor_corr.parquet`
-
-**Output columns:**
-
-- `site_id`
-- `ensembl_id`
-- `gene_symbol`
-- `spearman_r`
-- `pvalue`
-- `n_samples`
-
----
-
-### `11_merge_correlations.py`
-Merges cohort-specific methylation-expression correlation files.
-
-**Input:**
-
-- `data/correlations_tumor/*_corr.parquet`
-
-**Processing:**
-
-- Loads all cohort-specific correlation files.
-- Extracts the tumor type from each filename.
-- Concatenates all results.
-- Standardizes column types.
-
-**Output:**
-
-- `data/raw/expression_correlation.parquet`
-
----
-
-### `12_build_cpg_feature.py`
-Computes leukocyte reference methylation features.
-
-**Input:**
-
-- `methy_leucocyte.parquet`
-- `manifest_clean.parquet`
-
-**Processing:**
-
-- Keeps CpGs present in the cleaned manifest.
-- Removes CpGs with more than 20% missing values.
-- Imputes remaining missing values using CpG-specific medians.
-- Computes leukocyte methylation median and standard deviation.
-
-**Output:**
-
-- `data/raw/cpg_features.parquet`
-
-**Output columns:**
-- `site_id`
-- `leukocyte_median`
-- `leukocyte_std`
-- `n_samples`
-
----
-
-### `13_generate_tumor_types.py`
-Generates a tumor type reference table.
-
-**Input:**
-
-- None. The tumor type metadata are defined directly within the script.
-
-**Processing:**
-
-- Defines TCGA tumor abbreviations.
-- Assigns full cancer names.
-- Assigns tissue-of-origin labels.
-
-**Output:**
-
-- `data/raw/tumor_types.parquet`
-
-**Output columns:**
-
-- `tumor_type`
-- `full_name`
-- `tissue`
-
----
-
-## Main derived datasets
-
-| File | Description |
+| Output | Description |
 |---|---|
-| `manifest_clean.parquet` | Clean CpG annotation table with genomic coordinates and gene annotation. |
-| `pheno_clean.parquet` | Clean TCGA phenotype metadata. |
-| `methy.parquet` | Filtered TCGA methylation beta-value matrix. |
-| `{COHORT}_summary.parquet` | Cohort-specific methylation summary statistics. |
-| `methylation_summary.parquet` | Unified methylation summary table across cohorts. |
-| `gene_map.parquet` | Gene symbol to Ensembl Gene ID mapping table. |
-| `cpg_gene_map.parquet` | CpG-to-gene mapping table. |
-| `expr.parquet` | Filtered and log-transformed TCGA expression matrix. |
-| `{COHORT}_Tumor_corr.parquet` | Cohort-specific methylation-expression correlations. |
-| `expression_correlation.parquet` | Unified methylation-expression correlation table. |
-| `cpg_features.parquet` | Leukocyte methylation reference features. |
-| `tumor_types.parquet` | Tumor type lookup table. |
+| `data/raw/manifest_clean.parquet` | Clean CpG manifest with site IDs, genomic coordinates, and gene annotation. |
+| `data/raw/pheno_clean.parquet` | Clean TCGA phenotype metadata with tumor/normal classification. |
+| `data/raw/methy.parquet` | Filtered methylation beta-value matrix. |
+| `data/summary/{COHORT}_summary.parquet` | Cohort-level CpG methylation summary statistics. |
+| `data/raw/methylation_summary.parquet` | Unified tumor-summary table loaded as `tumor_summary`. |
+| `data/raw/gene_annotation.parquet` | Gene-level annotation table. |
+| `data/raw/gene_map.parquet` | Gene symbol to Ensembl ID mapping. |
+| `data/raw/cpg_gene_map.parquet` | Expanded CpG-to-gene bridge table. |
+| `data/raw/expr.parquet` | Filtered and log-transformed expression matrix. |
+| `data/raw/expression_correlation.parquet` | CpG-gene methylation-expression correlation table. |
+| `data/raw/cpg_features.parquet` | Leukocyte methylation background features. |
+| `data/raw/tumor_types.parquet` | Tumor-type lookup table. |
+| `data/biomarkers/biomarker_region.parquet` | Tumor-independent physical CpG region table. |
+| `data/biomarkers/biomarker_region_cpg.parquet` | Bridge table linking regions to CpGs. |
+| `data/biomarkers/biomarker_region_sequence_score.parquet` | Sequence features and sequence score for each region. |
+| `data/biomarkers/biomarker_region_sequence_score_config.json` | Parameters used for sequence scoring. |
 
 ---
 
-## Database
+## PostgreSQL model
 
-The processed datasets are loaded into a PostgreSQL database for fast querying by the Streamlit application.
-Database-related files are located in `db/`:
+The Streamlit app expects the processed Parquet outputs to be loaded into PostgreSQL.
 
-| File | Description |
-|---|---|
-| `schema.sql` | Defines the relational database schema. |
-| `build_postgres.py` | Builds and populates a local PostgreSQL database. |
-| `build_postgres_neon.py` | Builds and populates a Neon-hosted PostgreSQL database. |
+### Base tables
 
-The expected database includes tables for CpG annotation, methylation summaries, gene mappings, expression correlations, leukocyte features, and tumor metadata.
-
----
-
-## Streamlit application
-The interactive application is organized into multiple pages.
-
-### `Main.py`
-Main entry point of the Streamlit app.
-
-### `pages/1_CpG_Explorer.py`
-CpG-centered exploration page. It allows filtering and visualization by:
-
-- Tumor type.
-- CpG site.
-- Gene.
-- Delta methylation.
-- Tumor and normal methylation medians.
-- Pan-cancer methylation background.
-- Leukocyte methylation background.
-- Dispersion index.
-- Methylation-expression correlation.
-
-### `pages/2_Gene_Explorer.py`
-Gene-centered exploration page. It allows users to inspect CpG sites associated with a selected gene and visualize methylation patterns along genomic coordinates.
-
-### `services/ensembl.py`
-Contains functions to retrieve genomic sequence information from Ensembl, supporting gene and CpG visualization.
-
----
-
-## Installation
-Clone the repository:
-
-```bash
-git clone <repository_url>
-cd methylation_app
+```text
+cpg_annotation
+cpg_gene_map
+expression_correlation
+cpg_features
+sample_metadata
+gene_annotation
+tumor_types
+tumor_summary
 ```
 
-Create the environment using Conda:
+### Region / biomarker tables
 
-```bash
-conda env create -f environment.yml
-conda activate methylation_app
+```text
+biomarker_region
+biomarker_region_cpg
+biomarker_region_sequence_score
+biomarker_cpg_score
 ```
 
-Alternatively, install dependencies using pip:
+The database loader is:
 
 ```bash
-pip install -r requirements.txt
+python pipelines/build_postgres.py
+```
+
+The loader supports two connection modes:
+
+```bash
+# Local PostgreSQL
+export POSTGRES_USER=postgres
+export POSTGRES_PASSWORD=your_password
+export POSTGRES_HOST=localhost
+export POSTGRES_PORT=5432
+export POSTGRES_DB=db_methylation
+
+python pipelines/build_postgres.py
+```
+
+or:
+
+```bash
+# Direct database URL
+export DATABASE_URL="postgresql+psycopg2://user:password@host:5432/dbname"
+
+python pipelines/build_postgres.py
 ```
 
 ---
 
-## Running the pipeline
+## Running the preprocessing workflow
 
-Scripts should be executed from the project root directory.
+Run scripts from the project root.
 
 ```bash
+Rscript pipelines/generate_leukocytes_methylation.R
+
 python pipelines/01_clean_manifiesto.py
 python pipelines/02_clean_phenotype.py
 python pipelines/03_methy_download_clean_v2.py
 python pipelines/04_methy_summary_v2.py
 python pipelines/05_merge_methy_summary.py
+python pipelines/06_build_gene_annotation.py
 python pipelines/07_build_gene_map.py
 python pipelines/08_build_cpg_gene_map.py
 python pipelines/09_build_expr_parquet.py
 python pipelines/10_cpg_expression_corr_tumor.py
 python pipelines/11_merge_correlations.py
 python pipelines/12_build_cpg_feature.py
-python pipelines/14_generate_tumor_types.py
+python pipelines/13_generate_tumor_types.py
+python pipelines/14_build_biomarker_regions.py
+python pipelines/15_add_sequence_features_to_regions.py --fasta data/reference/hg38.fa
+python pipelines/build_postgres.py
 ```
 
-Leukocyte methylation data are generated separately from GEO IDAT files:
-
-```bash
-Rscript pipelines/generate_leukocytes_methylation.R
-```
-
-Then build the database:
-
-```bash
-python db/build_postgres.py
-```
-
-or, for a Neon-hosted database:
-
-```bash
-python db/build_postgres_neon.py
-```
+The FASTA used in pipeline 15 must match the genome build of the CpG coordinates. For the current hg38 manifest, use an hg38 FASTA.
 
 ---
 
-## Running the app
+## Running the Streamlit app
+
+Configure the database URL either in `.streamlit/secrets.toml`:
+
+```toml
+[database]
+url = "postgresql+psycopg2://user:password@host:5432/dbname"
+```
+
+or through the environment:
+
+```bash
+export DATABASE_URL="postgresql+psycopg2://user:password@host:5432/dbname"
+```
+
+Then run:
 
 ```bash
 streamlit run Main.py
 ```
 
-Database credentials should be configured in:
+---
+
+## Streamlit pages
+
+### `Main.py`
+
+Landing page for the application. It points users to the active modules:
 
 ```text
-.streamlit/secrets.toml
+Region Explorer
+Gene Explorer
 ```
 
-This file should not be committed to the repository.
+### `pages/1_Region_Explorer.py`
+
+Global region-level prioritization page. It applies tumor-specific CpG filters and aggregates qualifying CpGs into physical regions. It produces bubble plots where each point is a region.
+
+Main score:
+
+```text
+sequence_site_score = sequence_score × n_qualifying_sites
+```
+
+When expression is enabled:
+
+```text
+expression_signal = max(0, -mean_spearman_r)
+expression_score_component = 100 × expression_signal × n_qualifying_sites
+final_region_score = sequence_site_score + expression_score_component
+```
+
+When expression is disabled:
+
+```text
+final_region_score = sequence_site_score
+```
+
+### `pages/2_Gene_Explorer.py`
+
+Gene-level validation page. It shows the methylation profile across the selected gene, overlays filtered candidate regions, lists region/CpG evidence, and opens a sequence browser for selected regions or sites.
 
 ---
 
 ## Reproducibility notes
 
-- All raw public datasets are downloaded by the pipeline scripts.
-- Large raw and intermediate files should remain outside version control.
-- Outputs are stored in compressed Parquet format to reduce disk usage and improve read performance.
+- Large raw and derived data files should remain outside Git version control.
+- Parquet outputs are used for compact storage and fast loading.
 - Methylation beta-values are summarized using medians to reduce sensitivity to outliers.
-- Missing-value filtering is applied during summary or feature generation, not during the initial methylation download step.
-- Expression values are transformed as `log2(FPKM-UQ + 1)` before correlation analysis.
-- Spearman correlation is used because methylation-expression relationships are not assumed to be linear.
-- Pan-cancer reference groups exclude the cohort being analyzed to avoid circular comparisons.
+- Pan-cancer reference groups should exclude the cohort being analyzed.
+- Spearman correlation is used for methylation-expression association because the relationship is not assumed to be linear.
+- Region IDs are derived from genomic coordinates and are stable when input coordinates and parameters are unchanged.
+- Sequence score depends on the FASTA and region mode used by pipeline 15; these parameters are stored in the config JSON.
 
 ---
 
-## Suggested citation statement
+## Suggested methods statement
 
-If this repository is used in a manuscript, the following methodological statement can be adapted:
-
-> TCGA HumanMethylation450K beta-values, phenotype metadata and RNA-seq expression data were downloaded from public GDC Pan-Cancer resources. CpG probes were annotated using the HumanMethylation450K hg38 manifest. Methylation beta-values were filtered according to valid CpG probes and TCGA sample metadata, summarized by tumor type and sample class, and integrated with gene expression data through CpG-to-gene mappings. CpG-expression associations were estimated using Spearman correlation in tumor samples. Processed datasets were stored in Parquet format and loaded into a PostgreSQL database for interactive exploration through a Streamlit application.
+TCGA HumanMethylation450K beta-values, phenotype metadata, and RNA-seq expression data were processed together with CpG manifest annotation, leukocyte methylation reference profiles, and gene annotation. CpG-level tumor/normal methylation summaries were computed by tumor type and compared against pan-cancer background summaries. CpG-gene methylation-expression associations were estimated using Spearman correlation in tumor samples. Tumor-independent physical CpG regions were generated from manifest coordinates and annotated with sequence-context features from an hg38 reference FASTA. Processed outputs were loaded into PostgreSQL and explored through an interactive Streamlit application for region-level biomarker prioritization and gene-level validation.
 
 ---
 
 ## Repository status
 
-This repository is intended for research and reproducibility purposes. The current version supports exploratory biomarker prioritization and visualization of methylation patterns across selected TCGA tumor cohorts.
-
+This repository is intended for research and reproducibility. The current version supports exploratory and paper-oriented prioritization of methylation biomarker candidate regions across selected TCGA tumor cohorts.

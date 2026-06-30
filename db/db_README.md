@@ -1,22 +1,125 @@
-# Database
+# Database README
 
-This folder contains PostgreSQL utilities and SQL-related files used by the Streamlit app.
+This folder contains the lightweight database access layer used by the Streamlit app.
 
-## Local PostgreSQL setup
+The PostgreSQL schema is created and populated by:
 
-The database can be created manually:
-
-```bash
-createdb db_methylation
+```text
+pipelines/build_postgres.py
 ```
 
-or automatically by:
+The files in this folder are used at app runtime to connect to the database and execute SQL queries.
 
-```bash
-python pipelines/build_postgres.py
+---
+
+## Files
+
+```text
+db/
+├── db.py
+├── queries.py
+└── db_README.md
 ```
 
-## Environment variables for local database build
+---
+
+## `db.py`
+
+Defines the database connection logic.
+
+The app checks the database URL in this order:
+
+1. Streamlit secrets:
+
+```toml
+[database]
+url = "postgresql+psycopg2://user:password@host:5432/dbname"
+```
+
+2. Environment variable:
+
+```bash
+export DATABASE_URL="postgresql+psycopg2://user:password@host:5432/dbname"
+```
+
+If neither is available, the app raises an error asking for a database URL.
+
+---
+
+## `queries.py`
+
+Defines the helper used by Streamlit pages:
+
+```python
+run_query(query: str, params: dict | None = None) -> pandas.DataFrame
+```
+
+The helper:
+
+- gets the SQLAlchemy engine from `db.py`;
+- executes parameterized SQL;
+- returns the result as a pandas DataFrame.
+
+Pages should use parameterized queries instead of string interpolation for user-selected values.
+
+---
+
+## Expected PostgreSQL tables
+
+### Base app tables
+
+```text
+cpg_annotation
+cpg_gene_map
+expression_correlation
+cpg_features
+sample_metadata
+gene_annotation
+tumor_types
+tumor_summary
+```
+
+### Region / biomarker tables
+
+```text
+biomarker_cpg_score
+biomarker_region
+biomarker_region_cpg
+biomarker_region_sequence_score
+```
+
+---
+
+## Important column conventions
+
+The preferred standardized names are:
+
+```text
+tumor_summary.hi_index
+tumor_summary.pan_tumor_median
+tumor_summary.pan_normal_median
+```
+
+The app may include compatibility logic for older aliases such as:
+
+```text
+dispersion_index
+HI_index
+pantumor_median
+pannormal_median
+panTumor_median
+panNormal_median
+```
+
+However, new database builds should use the standardized names.
+
+---
+
+## Building the database
+
+Run from the project root.
+
+### Local PostgreSQL
 
 ```bash
 export POSTGRES_USER=postgres
@@ -24,79 +127,76 @@ export POSTGRES_PASSWORD=your_password
 export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
 export POSTGRES_DB=db_methylation
-```
 
-Then run:
-
-```bash
 python pipelines/build_postgres.py
 ```
 
-## Test local connection
+### Remote PostgreSQL
 
 ```bash
-psql -h localhost -U postgres -d db_methylation
+export DATABASE_URL="postgresql+psycopg2://user:password@host:5432/dbname"
+
+python pipelines/build_postgres.py
 ```
 
-Useful PostgreSQL commands:
+When `DATABASE_URL` is provided, the loader connects directly to that database and does not attempt to create a local database.
 
-```sql
-\dt
-SELECT COUNT(*) FROM tumor_summary;
-SELECT COUNT(*) FROM cpg_annotation;
-SELECT COUNT(*) FROM expression_correlation;
+---
+
+## Runtime configuration for Streamlit
+
+For local development, either export `DATABASE_URL`:
+
+```bash
+export DATABASE_URL="postgresql+psycopg2://user:password@localhost:5432/db_methylation"
+streamlit run Main.py
 ```
 
-## Streamlit connection
-
-Streamlit should read the database URL from `.streamlit/secrets.toml`:
+or create `.streamlit/secrets.toml`:
 
 ```toml
 [database]
-url = "postgresql+psycopg2://postgres:your_password@localhost:5432/db_methylation"
+url = "postgresql+psycopg2://user:password@localhost:5432/db_methylation"
 ```
 
-A typical `db/database.py` file can expose the SQLAlchemy engine:
+Do not commit `.streamlit/secrets.toml`.
 
-```python
-import streamlit as st
-from sqlalchemy import create_engine
+---
 
-@st.cache_resource
-def get_engine():
-    return create_engine(st.secrets["database"]["url"])
+## Query design notes
+
+- PostgreSQL should be treated as the source of truth for the app.
+- Pages should filter in SQL before loading results into pandas.
+- Region pages should preserve `biomarker_region.region_id`.
+- CpG-to-gene joins should use `cpg_gene_map` rather than parsing compound gene annotations from the manifest.
+- Expression joins should preserve the gene context when possible:
+
+```text
+site_id + tumor_type + gene_symbol
 ```
 
-## Main tables
+or:
 
-### `cpg_annotation`
+```text
+site_id + tumor_type + ensembl_id
+```
 
-CpG probe annotation, including genomic position and CpG island context.
+This avoids assigning a CpG-expression correlation to the wrong gene when a CpG maps to multiple genes.
 
-### `cpg_gene_map`
+---
 
-Mapping between CpG probes and genes.
+## Schema maintenance
 
-### `expression_correlation`
+If the database model changes, update together:
 
-Methylation-expression correlation per CpG and tumor type.
+```text
+pipelines/build_postgres.py
+schema.sql
+schema_neon.sql
+README.md
+pages/pages_README.md
+pipelines/pipelines_README.md
+db/db_README.md
+```
 
-### `cpg_features`
-
-CpG-level features such as leukocyte methylation background.
-
-### `sample_metadata`
-
-Cleaned sample metadata.
-
-### `gene_annotation`
-
-Gene coordinates, strand, biotype, and TSS information.
-
-### `tumor_types`
-
-Tumor type dictionary.
-
-### `tumor_summary`
-
-Tumor vs normal methylation summary by CpG and tumor type.
+The most important rule is that the Streamlit queries, PostgreSQL schema, and Parquet outputs must agree on table and column names.
