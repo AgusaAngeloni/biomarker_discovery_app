@@ -1138,7 +1138,7 @@ candidate_max_normal_median = st.sidebar.slider(
     "Candidate max Median NT",
     0.0,
     1.0,
-    0.05,
+    0.06,
     0.01,
 )
 

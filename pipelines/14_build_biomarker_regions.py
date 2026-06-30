@@ -2,7 +2,7 @@
 14_build_biomarker_regions_2.py
 --------------------------------------------------
 
-Build tumor-independent physical CpG regions from the
+Build tumor-independent gene CpG regions from the
 cleaned methylation manifest.
 
 Purpose
@@ -24,7 +24,7 @@ Processing
 4. Detect CpG clusters within each gene/chromosome group.
 5. Keep clusters with at least --min-cpgs CpGs and adjacent
    CpGs separated by no more than --max-gap-bp.
-6. Collapse duplicated physical intervals caused by multi-gene
+6. Collapse duplicated gene intervals caused by multi-gene
    annotations.
 7. Build a region table and a region-CpG bridge table.
 
@@ -35,7 +35,7 @@ Outputs
 
 Notes
 -----
-This step defines a reusable physical region universe. Tumor-
+This step defines a reusable gene region universe. Tumor-
 specific filters and biological prioritization are applied later.
 
 --------------------------------------------------
@@ -132,7 +132,7 @@ def split_gene_symbols(value: Any) -> list[str]:
 def is_low_priority_gene(gene_symbol: str) -> bool:
     """
     Heuristic used only to choose a display gene when several annotations map
-    to the exact same physical region.
+    to the exact same gene region.
 
     The full list is still preserved in gene_symbols_all.
     """
@@ -166,7 +166,7 @@ def join_gene_symbols(genes: Iterable[Any]) -> str:
 
 
 def make_region_id(chrom: str, start: int, end: int) -> str:
-    """Create a stable short physical region ID from genomic coordinates only."""
+    """Create a stable short gene region ID from genomic coordinates only."""
     raw = f"{normalize_chrom(chrom)}|{int(start)}|{int(end)}"
     digest = hashlib.md5(raw.encode("utf-8")).hexdigest()[:10]
     return f"REG_{digest}"
@@ -285,14 +285,14 @@ def finalize_gene_cluster(
     return region_row, bridge
 
 
-def collapse_duplicate_physical_regions(
+def collapse_duplicate_gene_regions(
     candidate_regions: pd.DataFrame,
     candidate_region_cpg: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Collapse duplicated intervals caused by multi-gene annotations.
 
-    The output region table has one row per physical interval. The primary
+    The output region table has one row per gene interval. The primary
     display gene is stored in gene_symbol and all associated genes are kept in
     gene_symbols_all.
     """
@@ -311,7 +311,7 @@ def collapse_duplicate_physical_regions(
 
     key_cols = ["chr", "core_start", "core_end", "browser_start", "browser_end"]
 
-    # Region-level physical table.
+    # Region-level gene table.
     region_rows: list[dict[str, Any]] = []
     for _, group in candidate_regions.groupby(key_cols, sort=False):
         first = group.iloc[0]
@@ -348,8 +348,8 @@ def collapse_duplicate_physical_regions(
         how="left",
     )
 
-    # Keep one row per physical region and CpG site. If the same site was linked
-    # to the same physical interval through multiple gene annotations, preserve
+    # Keep one row per gene region and CpG site. If the same site was linked
+    # to the same gene interval through multiple gene annotations, preserve
     # those site-level annotations in site_gene_symbols_all.
     bridge_rows: list[dict[str, Any]] = []
     for (_, site_id), group in bridge.groupby(["region_id", "site_id"], sort=False):
@@ -368,7 +368,7 @@ def collapse_duplicate_physical_regions(
     region_cpg = region_cpg.sort_values(["region_id", "start_pos", "site_id"]).reset_index(drop=True)
     region_cpg["cpg_order"] = region_cpg.groupby("region_id").cumcount() + 1
 
-    # Recalculate manifest counts after physical deduplication.
+    # Recalculate manifest counts after gene deduplication.
     counts = (
         region_cpg.groupby("region_id")
         .agg(
@@ -441,7 +441,7 @@ def build_regions(
             print(f"  Processed {group_number:,} gene/chromosome groups")
 
     if not candidate_region_rows:
-        return collapse_duplicate_physical_regions(pd.DataFrame(), pd.DataFrame())
+        return collapse_duplicate_gene_regions(pd.DataFrame(), pd.DataFrame())
 
     candidate_regions = pd.DataFrame(candidate_region_rows)
     candidate_region_cpg = pd.concat(candidate_bridge_tables, ignore_index=True)
@@ -449,11 +449,11 @@ def build_regions(
     n_candidate_regions = int(candidate_regions.shape[0])
     n_candidate_ids = int(candidate_regions["region_id"].nunique())
 
-    regions, region_cpg = collapse_duplicate_physical_regions(candidate_regions, candidate_region_cpg)
+    regions, region_cpg = collapse_duplicate_gene_regions(candidate_regions, candidate_region_cpg)
 
-    print(f"Candidate gene-specific regions before physical deduplication: {n_candidate_regions:,}")
-    print(f"Unique physical region IDs before collapse: {n_candidate_ids:,}")
-    print(f"Final physical regions after collapse: {regions.shape[0]:,}")
+    print(f"Candidate gene-specific regions before gene deduplication: {n_candidate_regions:,}")
+    print(f"Unique gene region IDs before collapse: {n_candidate_ids:,}")
+    print(f"Final gene regions after collapse: {regions.shape[0]:,}")
     print(f"Duplicated gene-annotated regions collapsed: {n_candidate_regions - regions.shape[0]:,}")
 
     return regions, region_cpg
@@ -466,7 +466,7 @@ def build_regions(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build normalized physical CpG region tables from manifest coordinates."
+        description="Build normalized gene CpG region tables from manifest coordinates."
     )
 
     parser.add_argument("--input-cpg", type=Path, default=RAW_DIR / "manifest_clean.parquet")
@@ -498,7 +498,7 @@ def main() -> None:
         print(f"Debug limit applied to input manifest: {manifest.shape[0]:,} rows")
 
     print(
-        "Building tumor-independent physical regions with "
+        "Building tumor-independent gene regions with "
         f">={args.min_cpgs} CpGs, max adjacent gap {args.max_gap_bp} bp, "
         f"gene_mode='{args.gene_mode}'..."
     )

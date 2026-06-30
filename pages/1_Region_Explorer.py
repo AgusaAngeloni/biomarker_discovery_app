@@ -460,9 +460,10 @@ def make_region_scatter(
     color_label: str = "Gene",
 ):
     """
-    Region-level bubble plot with minimal hover.
+    Region-level bubble plot with focused hover.
 
-    Hover shows only the values used in:
+    Hover shows:
+    - Gene | region
     - X axis: mean_hi
     - Y axis: mean_delta
     - Bubble diameter: size_col
@@ -478,7 +479,35 @@ def make_region_scatter(
     }
 
     plot_df = df.copy()
-    plot_df["_hover_size_value"] = pd.to_numeric(plot_df[size_col], errors="coerce")
+
+    plot_df["_hover_size_value"] = pd.to_numeric(
+        plot_df[size_col],
+        errors="coerce"
+    )
+
+    # -------------------------------
+    # Hover gene
+    # -------------------------------
+    if "gene_main" in plot_df.columns:
+        plot_df["_hover_gene"] = plot_df["gene_main"].astype(str)
+    elif "genes_all" in plot_df.columns:
+        plot_df["_hover_gene"] = plot_df["genes_all"].astype(str)
+    else:
+        plot_df["_hover_gene"] = ""
+
+    # -------------------------------
+    # Hover region
+    # -------------------------------
+    if "physical_region_id" in plot_df.columns:
+        plot_df["_hover_region"] = plot_df["physical_region_id"].astype(str)
+    elif "gene_region_id" in plot_df.columns:
+        plot_df["_hover_region"] = plot_df["gene_region_id"].astype(str)
+    elif "coordinate_region_id" in plot_df.columns:
+        plot_df["_hover_region"] = plot_df["coordinate_region_id"].astype(str)
+    elif "region_ids" in plot_df.columns:
+        plot_df["_hover_region"] = plot_df["region_ids"].astype(str)
+    else:
+        plot_df["_hover_region"] = ""
 
     fig = px.scatter(
         plot_df,
@@ -486,7 +515,11 @@ def make_region_scatter(
         y="mean_delta",
         size=size_col,
         color=color_col,
-        custom_data=["_hover_size_value"],
+        custom_data=[
+            "_hover_gene",
+            "_hover_region",
+            "_hover_size_value",
+        ],
         labels=labels,
         category_orders=category_orders,
         title=title,
@@ -495,14 +528,20 @@ def make_region_scatter(
 
     fig.update_traces(
         hovertemplate=(
+            "<b>%{customdata[0]} | %{customdata[1]}</b><br>"
             "Mean HI index in region: %{x:.3f}<br>"
             "Mean Δβ in region: %{y:.3f}<br>"
-            f"{size_label}: " + "%{customdata[0]:.3f}"
+            f"{size_label}: " + "%{customdata[2]:.3f}"
             "<extra></extra>"
         )
     )
 
-    fig.update_layout(height=700, template="plotly_white", legend_traceorder="normal")
+    fig.update_layout(
+        height=700,
+        template="plotly_white",
+        legend_traceorder="normal",
+    )
+
     return fig
 
 
