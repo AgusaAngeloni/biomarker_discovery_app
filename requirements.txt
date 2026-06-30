@@ -12,3 +12,4 @@ mygene
 gtfparse
 python-dotenv
 openpyxl
+matplotlib
