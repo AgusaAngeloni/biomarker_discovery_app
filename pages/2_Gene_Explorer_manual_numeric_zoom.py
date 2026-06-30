@@ -1,4 +1,5 @@
 import html
+import io
 import re
 
 import numpy as np
@@ -934,6 +935,339 @@ def build_filtered_region_track_trace(
 
 
 
+
+def make_editable_profile_svg(
+    graph: pd.DataFrame,
+    filtered_regions: pd.DataFrame,
+    tumor_type: str,
+    gene: str,
+    x_range: tuple[int, int],
+    show_hi: bool,
+    y2_max: float,
+) -> bytes:
+    """
+    Build an Illustrator-friendly SVG version of the methylation profile.
+
+    This export uses the same visual configuration as the Plotly curve plot:
+    - smoothed methylation curves
+    - teal tumor curve with light fill
+    - orange NT curve
+    - green PanCancer T / PanCancer curves
+    - purple leukocyte curve
+    - black delta markers
+    - red HI markers when enabled
+    - crimson candidate-region borders and bottom track
+    """
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from matplotlib.ticker import FuncFormatter
+    except Exception as exc:
+        raise RuntimeError(
+            "matplotlib is required to generate the editable SVG export. "
+            "Add matplotlib to the environment if it is not installed."
+        ) from exc
+
+    matplotlib.rcParams["svg.fonttype"] = "none"
+    matplotlib.rcParams["font.family"] = "Arial"
+
+    plot_graph = graph.copy().sort_values("start_pos")
+    x = pd.to_numeric(plot_graph["start_pos"], errors="coerce")
+
+    x_start, x_end = int(x_range[0]), int(x_range[1])
+    if x_end <= x_start:
+        raise ValueError("Invalid x-axis range for SVG export.")
+
+    def numeric_series(col: str) -> pd.Series:
+        if col not in plot_graph.columns:
+            return pd.Series(np.nan, index=plot_graph.index)
+        return pd.to_numeric(plot_graph[col], errors="coerce")
+
+    def smooth_curve_xy(
+        x_values: pd.Series,
+        y_values: pd.Series,
+        points_per_segment: int = 24,
+        clip_y: tuple[float, float] | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Return smoothed x/y arrays for SVG export.
+
+        Preference:
+        1. scipy PCHIP if available, because it preserves local shape well.
+        2. Cubic Hermite fallback using finite-difference slopes.
+
+        The fallback avoids adding scipy as a hard dependency.
+        """
+        data = pd.DataFrame(
+            {
+                "x": pd.to_numeric(x_values, errors="coerce"),
+                "y": pd.to_numeric(y_values, errors="coerce"),
+            }
+        ).replace([np.inf, -np.inf], np.nan).dropna()
+
+        data = data.sort_values("x").drop_duplicates(subset=["x"])
+        data = data[(data["x"] >= x_start) & (data["x"] <= x_end)]
+
+        if data.shape[0] < 2:
+            return np.array([], dtype=float), np.array([], dtype=float)
+
+        x_arr = data["x"].to_numpy(dtype=float)
+        y_arr = data["y"].to_numpy(dtype=float)
+
+        if data.shape[0] < 4:
+            if clip_y is not None:
+                y_arr = np.clip(y_arr, clip_y[0], clip_y[1])
+            return x_arr, y_arr
+
+        try:
+            from scipy.interpolate import PchipInterpolator
+
+            n_points = max(250, int((len(x_arr) - 1) * points_per_segment))
+            xs = np.linspace(float(x_arr.min()), float(x_arr.max()), n_points)
+            ys = PchipInterpolator(x_arr, y_arr)(xs)
+
+            if clip_y is not None:
+                ys = np.clip(ys, clip_y[0], clip_y[1])
+
+            return xs, ys
+        except Exception:
+            pass
+
+        n = len(x_arr)
+        slopes = np.zeros(n, dtype=float)
+
+        dx = np.diff(x_arr)
+        dy = np.diff(y_arr)
+        safe_dx = np.where(dx == 0, np.nan, dx)
+
+        segment_slopes = dy / safe_dx
+        segment_slopes = np.nan_to_num(segment_slopes, nan=0.0, posinf=0.0, neginf=0.0)
+
+        slopes[0] = segment_slopes[0]
+        slopes[-1] = segment_slopes[-1]
+
+        for i in range(1, n - 1):
+            denom = x_arr[i + 1] - x_arr[i - 1]
+            slopes[i] = (y_arr[i + 1] - y_arr[i - 1]) / denom if denom != 0 else 0.0
+
+        xs_parts: list[np.ndarray] = []
+        ys_parts: list[np.ndarray] = []
+
+        for i in range(n - 1):
+            x0 = x_arr[i]
+            x1 = x_arr[i + 1]
+            h = x1 - x0
+
+            if h <= 0:
+                continue
+
+            t = np.linspace(0, 1, points_per_segment, endpoint=False)
+            h00 = 2 * t**3 - 3 * t**2 + 1
+            h10 = t**3 - 2 * t**2 + t
+            h01 = -2 * t**3 + 3 * t**2
+            h11 = t**3 - t**2
+
+            xs = x0 + t * h
+            ys = (
+                h00 * y_arr[i]
+                + h10 * h * slopes[i]
+                + h01 * y_arr[i + 1]
+                + h11 * h * slopes[i + 1]
+            )
+
+            xs_parts.append(xs)
+            ys_parts.append(ys)
+
+        xs_parts.append(np.array([x_arr[-1]], dtype=float))
+        ys_parts.append(np.array([y_arr[-1]], dtype=float))
+
+        xs = np.concatenate(xs_parts)
+        ys = np.concatenate(ys_parts)
+
+        if clip_y is not None:
+            ys = np.clip(ys, clip_y[0], clip_y[1])
+
+        return xs, ys
+
+    median_tumor_svg = numeric_series("tumor_median")
+    median_normal_svg = numeric_series("normal_median")
+    pan_tumor_svg = numeric_series("pan_tumor_median")
+    pan_normal_svg = numeric_series("pan_normal_median")
+    leukocyte_svg = numeric_series("leukocyte_median")
+    delta_svg = numeric_series("delta_median")
+    hi_svg = numeric_series("hi_index")
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+
+    x_tumor, y_tumor = smooth_curve_xy(x, median_tumor_svg, clip_y=(-0.2, 1.0))
+    x_normal, y_normal = smooth_curve_xy(x, median_normal_svg, clip_y=(-0.2, 1.0))
+    x_pan_tumor, y_pan_tumor = smooth_curve_xy(x, pan_tumor_svg, clip_y=(-0.2, 1.0))
+    x_pan_normal, y_pan_normal = smooth_curve_xy(x, pan_normal_svg, clip_y=(-0.2, 1.0))
+    x_leukocyte, y_leukocyte = smooth_curve_xy(x, leukocyte_svg, clip_y=(-0.2, 1.0))
+
+    if len(x_tumor) > 0:
+        ax.plot(
+            x_tumor,
+            y_tumor,
+            color="#129098",
+            linewidth=3,
+            label="Median Type T",
+            solid_joinstyle="round",
+            solid_capstyle="round",
+        )
+        ax.fill_between(
+            x_tumor,
+            np.zeros(len(x_tumor), dtype=float),
+            np.nan_to_num(y_tumor, nan=0.0),
+            color="#c3e2ea",
+            alpha=1.0,
+            linewidth=0,
+        )
+
+    if len(x_normal) > 0:
+        ax.plot(
+            x_normal,
+            y_normal,
+            color="#f0913e",
+            linewidth=3,
+            label="Median Type NT",
+            solid_joinstyle="round",
+            solid_capstyle="round",
+        )
+
+    if len(x_pan_tumor) > 0:
+        ax.plot(
+            x_pan_tumor,
+            y_pan_tumor,
+            color="#57ac3a",
+            linewidth=3,
+            label="Median PanCancer T",
+            solid_joinstyle="round",
+            solid_capstyle="round",
+        )
+
+    if len(x_pan_normal) > 0:
+        ax.plot(
+            x_pan_normal,
+            y_pan_normal,
+            color="#22672e",
+            linewidth=3,
+            label="Median PanCancer",
+            solid_joinstyle="round",
+            solid_capstyle="round",
+        )
+
+    if len(x_leukocyte) > 0:
+        ax.plot(
+            x_leukocyte,
+            y_leukocyte,
+            color="#a04589",
+            linewidth=3,
+            label="Median Leukocytes",
+            solid_joinstyle="round",
+            solid_capstyle="round",
+        )
+
+    first_region_label = True
+    if filtered_regions is not None and not filtered_regions.empty:
+        region_track = filtered_regions.copy()
+        region_track["core_start"] = pd.to_numeric(region_track["core_start"], errors="coerce")
+        region_track["core_end"] = pd.to_numeric(region_track["core_end"], errors="coerce")
+        region_track = region_track.dropna(subset=["core_start", "core_end"])
+        region_track = region_track[
+            (region_track["core_end"] >= x_start)
+            & (region_track["core_start"] <= x_end)
+        ]
+
+        for _, region_row in region_track.iterrows():
+            r_start = int(region_row["core_start"])
+            r_end = int(region_row["core_end"])
+            label = "Candidate region" if first_region_label else None
+            first_region_label = False
+
+            ax.axvline(r_start, color="#dc143c", linestyle=":", linewidth=2.5)
+            ax.axvline(r_end, color="#dc143c", linestyle=":", linewidth=2.5)
+            ax.plot(
+                [r_start, r_end],
+                [-0.16, -0.16],
+                color="#dc143c",
+                linewidth=10,
+                solid_capstyle="butt",
+                label=label,
+            )
+
+    ax2 = ax.twinx()
+
+    marker_data = pd.DataFrame(
+        {
+            "x": x,
+            "delta": delta_svg,
+            "hi": hi_svg,
+        }
+    ).replace([np.inf, -np.inf], np.nan)
+    marker_data = marker_data[
+        (marker_data["x"] >= x_start) & (marker_data["x"] <= x_end)
+    ]
+
+    ax2.scatter(
+        marker_data["x"],
+        marker_data["delta"],
+        color="#000000",
+        s=26,
+        label="Delta",
+        zorder=5,
+    )
+
+    if show_hi:
+        ax2.scatter(
+            marker_data["x"],
+            marker_data["hi"],
+            color="#912523",
+            s=26,
+            label="HI",
+            zorder=5,
+        )
+
+    ax.set_xlim(x_start, x_end)
+    ax.set_ylim(-0.2, 1)
+    ax2.set_ylim(-0.2, max(1.0, float(y2_max) if pd.notna(y2_max) else 1.0))
+
+    ax.set_title(
+        f"{tumor_type} - {gene} Methylation gene profile",
+        loc="left",
+        fontsize=16,
+        fontweight="bold",
+    )
+    ax.set_xlabel("Genomic Position", fontsize=13)
+    ax.set_ylabel("Methylation", fontsize=13)
+    ax2.set_ylabel("Delta/HI", fontsize=13)
+
+    ax.grid(True, linewidth=0.5, alpha=0.35)
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{int(value):,}"))
+
+    handles1, labels1 = ax.get_legend_handles_labels()
+    handles2, labels2 = ax2.get_legend_handles_labels()
+    ax.legend(
+        handles1 + handles2,
+        labels1 + labels2,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1),
+        borderaxespad=0,
+        frameon=False,
+        fontsize=10,
+    )
+
+    fig.tight_layout()
+
+    buffer = io.BytesIO()
+    fig.savefig(buffer, format="svg", bbox_inches="tight")
+    plt.close(fig)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+
 # ============================================================
 # CSS
 # ============================================================
@@ -1298,6 +1632,64 @@ hover_text = (
     + graph["start_pos"].astype(str)
 )
 
+# ============================================================
+# Manual Plotly zoom/export
+# ============================================================
+
+position_values = pd.to_numeric(positions, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+
+if position_values.empty:
+    st.warning("No valid genomic positions are available for plotting.")
+    st.stop()
+
+plot_x_min = int(position_values.min())
+plot_x_max = int(position_values.max())
+
+st.sidebar.header("Plot zoom / SVG export")
+
+apply_manual_plot_zoom = st.sidebar.checkbox(
+    "Apply manual genomic zoom",
+    value=False,
+    help=(
+        "Enter genomic coordinates manually. The Plotly plot and the SVG "
+        "download from the Plotly toolbar will use this same visible range."
+    ),
+)
+
+zoom_start = st.sidebar.number_input(
+    "Zoom start coordinate",
+    min_value=plot_x_min,
+    max_value=plot_x_max,
+    value=plot_x_min,
+    step=1,
+    disabled=not apply_manual_plot_zoom,
+)
+
+zoom_end = st.sidebar.number_input(
+    "Zoom end coordinate",
+    min_value=plot_x_min,
+    max_value=plot_x_max,
+    value=plot_x_max,
+    step=1,
+    disabled=not apply_manual_plot_zoom,
+)
+
+if apply_manual_plot_zoom:
+    zoom_start = int(zoom_start)
+    zoom_end = int(zoom_end)
+
+    if zoom_end <= zoom_start:
+        st.sidebar.error("Zoom end coordinate must be greater than zoom start coordinate.")
+        st.stop()
+
+    plotly_export_suffix = f"{zoom_start}_{zoom_end}"
+    plotly_xaxis_range = [zoom_start, zoom_end]
+else:
+    zoom_start = plot_x_min
+    zoom_end = plot_x_max
+    plotly_export_suffix = "full_gene"
+    plotly_xaxis_range = None
+
 show_hi = st.checkbox("Show HI. Checking this box will modify the right axis.", value=False)
 
 fig2 = go.Figure()
@@ -1473,6 +1865,7 @@ fig2.update_layout(
             size=18,
         ),
         tickformat=",d",
+        range=plotly_xaxis_range,
         rangeslider=dict(visible=True),
         showgrid=True,
     ),
@@ -1516,7 +1909,7 @@ fig2.update_layout(
 config = {
     "toImageButtonOptions": {
         "format": "svg",
-        "filename": f"{gene}_{tumor_type}",
+        "filename": f"{gene}_{tumor_type}_{plotly_export_suffix}",
         "height": 600,
         "width": 1400,
         "scale": 1,
@@ -1528,6 +1921,53 @@ st.plotly_chart(
     use_container_width=True,
     config=config,
 )
+
+if apply_manual_plot_zoom:
+    st.info(
+        f"Manual Plotly zoom applied: chr region {zoom_start}-{zoom_end}. "
+        "Use the camera/download button in the Plotly toolbar to export this exact visible range as SVG."
+    )
+
+# ============================================================
+# Editable SVG export
+# ============================================================
+
+x_min_available = int(pd.to_numeric(positions, errors="coerce").min())
+x_max_available = int(pd.to_numeric(positions, errors="coerce").max())
+
+with st.expander("Editable SVG export for Illustrator"):
+    st.caption(
+        "Use this export when the default Plotly SVG is difficult to edit in Illustrator. "
+        "The exported SVG uses smoothed curves and the same numeric zoom coordinates defined in the sidebar."
+    )
+
+    st.caption(
+        f"Editable SVG range: {int(zoom_start)}-{int(zoom_end)}. "
+        "This uses the same numeric coordinates defined in the sidebar."
+    )
+
+    editable_svg_x_range = (int(zoom_start), int(zoom_end))
+
+    try:
+        editable_curve_svg = make_editable_profile_svg(
+            graph=graph,
+            filtered_regions=filtered_candidate_regions,
+            tumor_type=tumor_type,
+            gene=gene,
+            x_range=(int(editable_svg_x_range[0]), int(editable_svg_x_range[1])),
+            show_hi=show_hi,
+            y2_max=y2_max,
+        )
+
+        st.download_button(
+            label="Download editable smooth curve SVG for Illustrator",
+            data=editable_curve_svg,
+            file_name=f"{gene}_{tumor_type}_methylation_profile_editable_smooth.svg",
+            mime="image/svg+xml",
+        )
+    except Exception as exc:
+        st.warning(f"Editable SVG export could not be generated: {exc}")
+
 
 # ----------------------------
 # Expression Graph
@@ -1626,6 +2066,7 @@ fig3.update_layout(
             size=18,
         ),
         tickformat=",d",
+        range=plotly_xaxis_range,
         rangeslider=dict(visible=True),
         showgrid=True,
     ),
@@ -1656,7 +2097,7 @@ fig3.update_layout(
 config = {
     "toImageButtonOptions": {
         "format": "svg",
-        "filename": f"{gene}_{tumor_type}_methylation_expression",
+        "filename": f"{gene}_{tumor_type}_methylation_expression_{plotly_export_suffix}",
         "height": 650,
         "width": 1400,
         "scale": 1,
