@@ -16,6 +16,7 @@ from services.ensembl import get_sequence
 
 st.set_page_config(
     page_title="Gene Explorer",
+    page_icon="🧬",
     layout="wide",
 )
 
@@ -1309,23 +1310,23 @@ fig2.add_trace(
         name="Median Type T",
         customdata=site,
         line=dict(
-            width=2,
-            color="rgba(255,165,0,1)",
+            width=3,
+            color="rgba(18,144,152,1)",
             shape="spline",
             smoothing=1.3,
         ),
         fill="tozeroy",
-        fillcolor="rgba(255,165,0,1)",
+        fillcolor="rgba(195,226,234, 1)",
     )
 )
 
 curves = [
-    ("Median Type NT", median_normal, "rgba(255,255,0,1)", "line", "y"),
-    ("Median PanCan T", pan_tumor, "rgba(0,255,0,1)", "line", "y"),
-    ("Median PanCan NT", pan_normal, "rgba(0,128,0,1)", "line", "y"),
-    ("Median Leukocytes", leukocytes, "rgba(130,168,240,1)", "line", "y"),
+    ("Median Type NT", median_normal, "rgba(240,145,62,1)", "line", "y"),
+    ("Median PanCan T", pan_tumor, "rgba(87,172,58,1)", "line", "y"),
+    ("Median PanCan NT", pan_normal, "rgba(34,103,46,1)", "line", "y"),
+    ("Median Leukocytes", leukocytes, "rgba(160,69,137,1)", "line", "y"),
     #("Expression", expression, "rgba(127,127,127,1)", "expression", "line"),
-    ("Delta", delta_median, "rgba(236,0,139,1)", "marker", "y2"),
+    ("Delta", delta_median, "rgba(0,0,0,1)", "marker", "y2"),
 ]
 
 for name, values, color, trace_type, yaxis in curves:
@@ -1338,7 +1339,7 @@ for name, values, color, trace_type, yaxis in curves:
                 name=name,
                 line=dict(
                     color=color,
-                    width=2,
+                    width=3,
                     shape="spline",
                     smoothing=1.3,
                 ),
@@ -1366,7 +1367,7 @@ if show_hi:
             y=hi_index,
             mode="markers",
             marker=dict(
-                color="rgba(255,0,0,1)",
+                color="rgba(145,37,35,1)",
                 size=8,
             ),
             name="HI",
@@ -1403,9 +1404,9 @@ for _, row in filtered_candidate_regions.iterrows():
     ]:
         fig2.add_vline(
             x=x_value,
-            line_width=1.5,
+            line_width=2.5,
             line_dash="dot",
-            line_color="rgba(30,64,175,0.95)",
+            line_color="rgba(220,20,60,0.95)",
             annotation_text="",
         )
 
@@ -1416,8 +1417,8 @@ for _, row in filtered_candidate_regions.iterrows():
             mode="lines",
             name="Candidate region",
             line=dict(
-                color="rgba(30,64,175,1)",
-                width=8,
+                color="rgba(220,20,60,1)",
+                width=10,
             ),
             hovertext=[
                 f"{region_id} | {region_start:,}-{region_end:,}",
@@ -1541,21 +1542,21 @@ fig3.add_trace(
         name="Median Type T",
         customdata=site,
         line=dict(
-            width=2,
-            color="rgba(255,165,0,1)",
+            width=3,
+            color="rgba(18,144,152,1)",
             shape="spline",
             smoothing=1.3,
         ),
         fill="tozeroy",
-        fillcolor="rgba(255,165,0,1)",
+        fillcolor="rgba(195,226,234, 1)",
     )
 )
 
 curves = [
-    ("Median Type NT", median_normal, "rgba(255,255,0,1)"),
-    ("Median PanCan T", pan_tumor, "rgba(0,255,0,1)"),
-    ("Median PanCan NT", pan_normal, "rgba(0,128,0,1)"),
-    ("Median Leukocytes", leukocytes, "rgba(130,168,240,1)"),
+    ("Median Type NT", median_normal, "rgba(240,145,62,1)"),
+    ("Median PanCan T", pan_tumor, "rgba(87,172,58,1)"),
+    ("Median PanCan NT", pan_normal, "rgba(34,103,46,1)"),
+    ("Median Leukocytes", leukocytes, "rgba(0,104,170,1)"),
     ("Expression", expression, "rgba(0,0,0,1)"),
 ]
 
@@ -1568,7 +1569,7 @@ for name, values, color in curves:
             name=name,
             line=dict(
                 color=color,
-                width=2,
+                width=3,
                 shape="spline",
                 smoothing=1.3,
             ),

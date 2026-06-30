@@ -17,6 +17,7 @@ from db.queries import run_query
 
 st.set_page_config(
     page_title="Region Candidate Scatter",
+    page_icon="🧬",
     layout="wide",
 )
 
