@@ -512,21 +512,31 @@ def make_region_scatter(
     size_max: int = 45,
     color_col: str = "gene_main",
     color_label: str = "Gene",
+    x_col: str = "mean_hi",
+    y_col: str = "mean_delta",
+    x_label: str | None = None,
+    y_label: str | None = None,
 ):
     """
     Region-level bubble plot with focused hover.
 
-    Hover shows:
-    - Gene | region
+    By default:
     - X axis: mean_hi
     - Y axis: mean_delta
     - Bubble diameter: size_col
+
+    The function also supports custom x/y variables for additional plots.
     """
     category_orders = alphabetic_category_orders(df)
 
+    if x_label is None:
+        x_label = x_col
+    if y_label is None:
+        y_label = y_col
+
     labels = {
-        "mean_hi": "Mean HI in region",
-        "mean_delta": "Mean Δβ in region",
+        x_col: x_label,
+        y_col: y_label,
         "gene_main": "Gene",
         size_col: size_label,
         color_col: color_label,
@@ -534,14 +544,19 @@ def make_region_scatter(
 
     plot_df = df.copy()
 
+    plot_df["_hover_x_value"] = pd.to_numeric(
+        plot_df[x_col],
+        errors="coerce"
+    )
+    plot_df["_hover_y_value"] = pd.to_numeric(
+        plot_df[y_col],
+        errors="coerce"
+    )
     plot_df["_hover_size_value"] = pd.to_numeric(
         plot_df[size_col],
         errors="coerce"
     )
 
-    # -------------------------------
-    # Hover gene
-    # -------------------------------
     if "gene_main" in plot_df.columns:
         plot_df["_hover_gene"] = plot_df["gene_main"].astype(str)
     elif "genes_all" in plot_df.columns:
@@ -549,9 +564,6 @@ def make_region_scatter(
     else:
         plot_df["_hover_gene"] = ""
 
-    # -------------------------------
-    # Hover region
-    # -------------------------------
     if "physical_region_id" in plot_df.columns:
         plot_df["_hover_region"] = plot_df["physical_region_id"].astype(str)
     elif "gene_region_id" in plot_df.columns:
@@ -565,13 +577,15 @@ def make_region_scatter(
 
     fig = px.scatter(
         plot_df,
-        x="mean_hi",
-        y="mean_delta",
+        x=x_col,
+        y=y_col,
         size=size_col,
         color=color_col,
         custom_data=[
             "_hover_gene",
             "_hover_region",
+            "_hover_x_value",
+            "_hover_y_value",
             "_hover_size_value",
         ],
         labels=labels,
@@ -583,9 +597,9 @@ def make_region_scatter(
     fig.update_traces(
         hovertemplate=(
             "<b>%{customdata[0]} | %{customdata[1]}</b><br>"
-            "Mean HI in region: %{x:.3f}<br>"
-            "Mean Δβ in region: %{y:.3f}<br>"
-            f"{size_label}: " + "%{customdata[2]:.3f}"
+            f"{x_label}: " + "%{customdata[2]:.3f}<br>"
+            f"{y_label}: " + "%{customdata[3]:.3f}<br>"
+            f"{size_label}: " + "%{customdata[4]:.3f}"
             "<extra></extra>"
         )
     )
@@ -608,12 +622,12 @@ st.sidebar.header("CpG filters")
 tumor_label = st.sidebar.selectbox("Tumor Type", list(TUMOR_MAP.keys()))
 tumor_type = TUMOR_MAP[tumor_label]
 
-min_delta = st.sidebar.slider("Min Δβ", 0.0, 1.0, 0.50, 0.01)
+min_delta = st.sidebar.slider("Min Δβ", 0.0, 1.0, 0.55, 0.01)
 max_normal_median = st.sidebar.slider("Max Median NT β", 0.0, 1.0, 0.06, 0.01)
-max_pan_normal_median = st.sidebar.slider("Max Median PanCan NT β", 0.0, 1.0, 0.08, 0.01)
-max_pan_tumor_median = st.sidebar.slider("Max Median PanCan T β", 0.0, 1.0, 0.08, 0.01)
-max_leukocyte = st.sidebar.slider("Max Median PB β", 0.0, 1.0, 0.05, 0.01)
-min_hi = st.sidebar.slider("Min HI", 0.0, 5.0, 1.60, 0.05)
+max_pan_normal_median = st.sidebar.slider("Max Median PanCan NT β", 0.0, 1.0, 0.06, 0.01)
+max_pan_tumor_median = st.sidebar.slider("Max Median PanCan T β", 0.0, 1.0, 0.06, 0.01)
+max_leukocyte = st.sidebar.slider("Max Median PB β", 0.0, 1.0, 0.04, 0.01)
+min_hi = st.sidebar.slider("Min HI", 0.0, 5.0, 2.40, 0.05)
 
 st.sidebar.header("Methylation-Expression Association Filter")
 apply_expression_filter = st.sidebar.checkbox("Apply Methylation-Expression Association Filter", value=False)
@@ -621,7 +635,7 @@ max_mean_spearman_r = st.sidebar.slider(
     "Max Mean Methylation-Expression Association",
     -1.0,
     1.0,
-    -0.06,
+    -0.16,
     0.01,
     disabled=not apply_expression_filter,
 )
@@ -764,6 +778,33 @@ st.plotly_chart(
         width=1400,
     ),
 )
+
+sequence_plot_df = plot_df.copy()
+if sequence_plot_df.empty:
+    st.warning("No values available for the sequence score plot.")
+else:
+    fig_sequence = make_region_scatter(
+        sequence_plot_df,
+        x_col="sequence_score",
+        y_col="mean_delta",
+        x_label="Sequence score",
+        y_label="Mean Δβ in region",
+        size_col="n_qualifying_sites",
+        size_label="Qualifying CpGs in region",
+        title=f"{tumor_type} - Sequence score vs Δβ",
+        size_max=45,
+        color_col="final_region_score",
+        color_label="Final region score",
+    )
+    st.plotly_chart(
+        fig_sequence,
+        use_container_width=True,
+        config=plot_svg_config(
+            filename=f"{tumor_type} - Sequence score vs delta",
+            height=700,
+            width=1400,
+        ),
+    )
 
 score_plot_df = plot_df[pd.to_numeric(plot_df["final_region_score"], errors="coerce").fillna(0) > 0].copy()
 if score_plot_df.empty:

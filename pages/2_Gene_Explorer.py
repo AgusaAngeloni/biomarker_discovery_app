@@ -1131,7 +1131,7 @@ show_filtered_candidate_regions = st.sidebar.checkbox(
 )
 
 candidate_min_delta = st.sidebar.slider(
-    "Candidate minimum Delta",
+    "Candidate Min Δβ",
     0.0,
     1.0,
     0.50,
@@ -1139,7 +1139,7 @@ candidate_min_delta = st.sidebar.slider(
 )
 
 candidate_max_normal_median = st.sidebar.slider(
-    "Candidate max Median NT",
+    "Candidate Max Median NT β",
     0.0,
     1.0,
     0.06,
@@ -1147,7 +1147,7 @@ candidate_max_normal_median = st.sidebar.slider(
 )
 
 candidate_max_pan_normal_median = st.sidebar.slider(
-    "Candidate max PanCancer",
+    "Candidate Max PanCan NT β",
     0.0,
     1.0,
     0.08,
@@ -1155,7 +1155,7 @@ candidate_max_pan_normal_median = st.sidebar.slider(
 )
 
 candidate_max_pan_tumor_median = st.sidebar.slider(
-    "Candidate max PanCancer T",
+    "Candidate Max PanCan T β",
     0.0,
     1.0,
     0.08,
@@ -1163,7 +1163,7 @@ candidate_max_pan_tumor_median = st.sidebar.slider(
 )
 
 candidate_max_leukocyte = st.sidebar.slider(
-    "Candidate max Leukocytes",
+    "Candidate Max PB β",
     0.0,
     1.0,
     0.05,
@@ -1171,7 +1171,7 @@ candidate_max_leukocyte = st.sidebar.slider(
 )
 
 candidate_min_hi = st.sidebar.slider(
-    "Candidate min HI",
+    "Candidate Min HI",
     0.0,
     5.0,
     1.60,
@@ -1179,12 +1179,12 @@ candidate_min_hi = st.sidebar.slider(
 )
 
 candidate_apply_expression_filter = st.sidebar.checkbox(
-    "Apply candidate expression filter",
+    "Apply Candidate Methylation-Expression Association filter",
     value=False,
 )
 
 candidate_max_mean_spearman_r = st.sidebar.slider(
-    "Candidate max mean Spearman r",
+    "Candidate Max Mean Methylation-Expression Association",
     -1.0,
     1.0,
     -0.06,
@@ -1300,6 +1300,11 @@ hover_text = (
 
 show_hi = st.checkbox("Show HI. Checking this box will modify the right axis.", value=False)
 
+show_delta = st.checkbox(
+    "Show Δβ. Checking this box will modify the right axis.",
+    value=False,
+)
+
 fig2 = go.Figure()
 
 fig2.add_trace(
@@ -1307,7 +1312,7 @@ fig2.add_trace(
         x=positions,
         y=median_tumor,
         mode="lines",
-        name="Median Type T",
+        name="Median Type T β",
         customdata=site,
         line=dict(
             width=3,
@@ -1321,12 +1326,11 @@ fig2.add_trace(
 )
 
 curves = [
-    ("Median Type NT", median_normal, "rgba(240,145,62,1)", "line", "y"),
-    ("Median PanCan T", pan_tumor, "rgba(87,172,58,1)", "line", "y"),
-    ("Median PanCan NT", pan_normal, "rgba(34,103,46,1)", "line", "y"),
-    ("Median Leukocytes", leukocytes, "rgba(160,69,137,1)", "line", "y"),
+    ("Median Type NT β", median_normal, "rgba(240,145,62,1)", "line", "y"),
+    ("Median PanCan T β", pan_tumor, "rgba(87,172,58,1)", "line", "y"),
+    ("Median PanCan NT β", pan_normal, "rgba(34,103,46,1)", "line", "y"),
+    ("Median PB β", leukocytes, "rgba(160,69,137,1)", "line", "y"),
     #("Expression", expression, "rgba(127,127,127,1)", "expression", "line"),
-    ("Delta", delta_median, "rgba(0,0,0,1)", "marker", "y2"),
 ]
 
 for name, values, color, trace_type, yaxis in curves:
@@ -1360,6 +1364,21 @@ for name, values, color, trace_type, yaxis in curves:
             )
         )
 
+if show_delta:
+    fig2.add_trace(
+        go.Scatter(
+            x=positions,
+            y=delta_median,
+            mode="markers",
+            yaxis="y2",
+            name="Delta",
+            marker=dict(
+                color="rgba(0,0,0,1)",
+                size=8,
+            ),
+        )
+    )
+
 if show_hi:
     fig2.add_trace(
         go.Scatter(
@@ -1374,17 +1393,19 @@ if show_hi:
             yaxis="y2",
         )
     )
-    y2_max = hi_index.max()
-else:
-    y2_max = 1
 
-finite_y2 = pd.concat(
-    [
-        pd.Series(delta_median).replace([np.inf, -np.inf], np.nan),
-        pd.Series(hi_index).replace([np.inf, -np.inf], np.nan),
-    ],
-    ignore_index=True,
-).dropna()
+y2_values = []
+if show_delta:
+    y2_values.append(pd.Series(delta_median).replace([np.inf, -np.inf], np.nan))
+if show_hi:
+    y2_values.append(pd.Series(hi_index).replace([np.inf, -np.inf], np.nan))
+
+if y2_values:
+    finite_y2 = pd.concat(y2_values, ignore_index=True).dropna()
+else:
+    finite_y2 = pd.Series(dtype=float)
+
+y2_max = max(1, float(finite_y2.max())) if not finite_y2.empty else 1
 
 fig2.update_traces(
     hovertext=hover_text,
@@ -1428,6 +1449,15 @@ for _, row in filtered_candidate_regions.iterrows():
             showlegend=False,
         )
     )
+
+if show_delta and show_hi:
+    y2_axis_title = "Δβ/HI"
+elif show_delta:
+    y2_axis_title = "Δβ"
+elif show_hi:
+    y2_axis_title = "HI"
+else:
+    y2_axis_title = "Δβ/HI"
 
 fig2.update_layout(
     template="plotly_white",
@@ -1495,7 +1525,7 @@ fig2.update_layout(
     ),
     yaxis2=dict(
         title=dict(
-            text="Delta/HI",
+            text=y2_axis_title,
             font=dict(
                 family="Arial Narrow",
                 color="black",
@@ -1539,7 +1569,7 @@ fig3.add_trace(
         x=positions,
         y=median_tumor,
         mode="lines",
-        name="Median Type T",
+        name="Median Type T β",
         customdata=site,
         line=dict(
             width=3,
@@ -1553,11 +1583,11 @@ fig3.add_trace(
 )
 
 curves = [
-    ("Median Type NT", median_normal, "rgba(240,145,62,1)"),
-    ("Median PanCan T", pan_tumor, "rgba(87,172,58,1)"),
-    ("Median PanCan NT", pan_normal, "rgba(34,103,46,1)"),
-    ("Median Leukocytes", leukocytes, "rgba(160,69,137,1)"),
-    ("Expression", expression, "rgba(0,0,0,1)"),
+    ("Median Type NT β", median_normal, "rgba(240,145,62,1)"),
+    ("Median PanCan T β", pan_tumor, "rgba(87,172,58,1)"),
+    ("Median PanCan NT β", pan_normal, "rgba(34,103,46,1)"),
+    ("Median PB β", leukocytes, "rgba(160,69,137,1)"),
+    ("Methylation-Expression Association", expression, "rgba(0,0,0,1)"),
 ]
 
 for name, values, color in curves:
@@ -1602,7 +1632,7 @@ fig3.update_layout(
         ),
     ),
     title=dict(
-        text=f"{tumor_type} - <b>{gene}</b> Methylation gene profile expression",
+        text=f"{tumor_type} - <b>{gene}</b> Methylation gene profile methylation-expression association",
         x=0,
         xanchor="left",
         font=dict(
@@ -1634,7 +1664,7 @@ fig3.update_layout(
         # Lower space free enough for Spearman r.
         range=[-0.6, 1],
         title=dict(
-            text="Methylation / Expression Spearman r",
+            text="Methylation - Expression Association",
             font=dict(
                 family="Arial Narrow",
                 color="black",
@@ -1688,15 +1718,14 @@ elif filtered_candidate_error is not None:
 elif filtered_candidate_regions.empty:
     st.info("No filtered candidate regions passed the current filters.")
 else:
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     with c1:
-        st.metric("Candidate regions", f"{filtered_candidate_regions['region_id'].nunique():,}")
+        st.metric("Candidate Regions", f"{filtered_candidate_regions['region_id'].nunique():,}")
     with c2:
         st.metric("Candidate CpGs", f"{filtered_candidate_cpgs['site_id'].nunique():,}")
     with c3:
-        st.metric("Max tumor median", f"{filtered_candidate_regions['max_tumor_median'].max():.3f}")
-    with c4:
-        st.metric("Max biological score", f"{filtered_candidate_regions['max_biological_score'].max():.2f}")
+        st.metric("Max Tumor Median β", f"{filtered_candidate_regions['max_tumor_median'].max():.3f}")
+ 
 
     region_table_cols = [
         "region_id",
@@ -1721,18 +1750,13 @@ else:
         "gc_fraction",
         "sequence_score",
         "mean_delta",
-        "max_delta",
         "mean_hi",
-        "max_hi",
         "mean_tumor_median",
         "mean_normal_median",
         "mean_pan_tumor_median",
         "mean_pan_normal_median",
         "mean_leukocyte_median",
         "mean_spearman_r",
-        "min_spearman_r",
-        "qualifying_cpg_sites",
-        "qualifying_cpg_positions",
     ]
     region_table_cols = [col for col in region_table_cols if col in filtered_candidate_regions.columns]
 
@@ -1802,15 +1826,8 @@ else:
     )
 
     cpg_table_cols = [
-        "region_id",
         "region_gene_symbol",
-        "region_genes_all",
-        "cpg_gene_symbol",
         "chr",
-        "core_start",
-        "core_end",
-        "browser_start",
-        "browser_end",
         "site_id",
         "start_pos",
         "cpg_order",
@@ -1823,26 +1840,6 @@ else:
         "hi_index",
         "leukocyte_median",
         "spearman_r",
-        "biological_score",
-        "delta_score",
-        "normal_low_score",
-        "leukocyte_low_score",
-        "hi_score",
-        "expression_score",
-        "passes_loose_seed",
-        "passes_default_filter",
-        "passes_strict_filter",
-        "n_manifest_cpgs",
-        "n_manifest_c",
-        "cpg_density_per_100bp",
-        "sequence_score",
-        "sequence_available",
-        "sequence_length",
-        "n_c_sequence",
-        "n_g_sequence",
-        "n_cg_sequence",
-        "n_gcgc",
-        "gc_fraction",
     ]
     cpg_table_cols = [col for col in cpg_table_cols if col in filtered_candidate_cpgs.columns]
 
@@ -2399,31 +2396,32 @@ n_gcgc = count_overlapping_motif(sequence, "GCGC")
 gc_fraction = (n_c + n_g) / len(sequence) if sequence else np.nan
 
 col_a, col_b, col_c, col_d = st.columns(4)
-with col_a:
-    st.metric("Region ID", region_id)
-with col_b:
-    st.metric("Gene", region_gene)
-with col_c:
-    st.metric("Length", f"{len(sequence):,} bp")
-with col_d:
-    st.metric("GCGC motifs", f"{n_gcgc:,}")
 
-col_e, col_f, col_g, col_h = st.columns(4)
+with col_a:
+    st.metric("Gene", region_gene)
+with col_b:
+    st.metric("GCGC motifs", f"{n_gcgc:,}")
+with col_c:
+    st.metric("Manifest CpGs", f"{len(manifest_cpg_positions)}/{len(manifest_positions_raw)}")
+with col_d:
+    st.metric("Displayed Length", f"{len(sequence):,} bp")
+
+col_e, col_f, col_g = st.columns(3)
 with col_e:
     st.metric("Chromosome", f"chr{chrom}")
 with col_f:
-    st.metric("Core region", f"{core_start}-{core_end}")
+    st.metric("Core Region", f"{core_start}-{core_end}")
 with col_g:
-    st.metric("Displayed region", f"{seq_start}-{seq_end}")
-with col_h:
-    st.metric("Manifest CpGs", f"{len(manifest_cpg_positions)}/{len(manifest_positions_raw)}")
+    st.metric("Displayed Region", f"{seq_start}-{seq_end}")
+
+
 
 metadata = (
-    f"Region: {region_id} | gene: {region_gene} | chr{chrom}:{seq_start}-{seq_end} | "
-    f"core: {core_start}-{core_end} | manifest CpGs: {len(manifest_cpg_positions)}/{len(manifest_positions_raw)} | "
+    f"{region_gene} | chr{chrom}:{seq_start}-{seq_end} | "
+    f"manifest CpGs: {len(manifest_cpg_positions)}/{len(manifest_positions_raw)} | "
     f"CG: {n_cg:,} | GCGC: {n_gcgc:,} | GC fraction: {gc_fraction:.3f}"
 )
-st.info(f"Browser source: {browser_selection_source} | {metadata}")
+st.info(f"Browser source: {metadata}")
 
 if not_found_positions:
     st.warning(
@@ -2455,8 +2453,9 @@ sequence_svg = render_region_sequence_svg(
     core_start=core_start,
     core_end=core_end,
     gcgc_roles=gcgc_roles,
-    title=f"{region_id} | {region_gene} | chr{chrom}:{seq_start}-{seq_end}",
-    subtitle=metadata,
+    title=f"{region_gene} | chr{chrom}:{seq_start}-{seq_end}",
+    subtitle=f"manifest CpGs: {len(manifest_cpg_positions)}/{len(manifest_positions_raw)} | "
+    f"CG: {n_cg:,} | GCGC: {n_gcgc:,} | GC fraction: {gc_fraction:.3f}",
     bases_per_row=BASES_PER_ROW,
 )
 
