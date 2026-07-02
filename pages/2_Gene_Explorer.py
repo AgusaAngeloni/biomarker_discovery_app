@@ -1819,10 +1819,10 @@ else:
         )
 
     st.download_button(
-        label="Download filtered candidate regions CSV",
-        data=filtered_candidate_regions[region_table_cols].to_csv(index=False).encode("utf-8"),
-        file_name=f"{gene}_{tumor_type}_filtered_candidate_regions.csv",
-        mime="text/csv",
+        label="Download filtered candidate regions TSV",
+        data=filtered_candidate_regions[region_table_cols].to_csv(index=False, sep="\t").encode("utf-8"),   
+        file_name=f"{gene}_{tumor_type}_filtered_candidate_regions.tsv",
+        mime="text/tab-separated-values",
     )
 
     cpg_table_cols = [
@@ -1851,10 +1851,10 @@ else:
     )
 
     st.download_button(
-        label="Download filtered candidate CpGs CSV",
-        data=filtered_candidate_cpgs[cpg_table_cols].to_csv(index=False).encode("utf-8"),
-        file_name=f"{gene}_{tumor_type}_filtered_candidate_cpgs.csv",
-        mime="text/csv",
+        label="Download filtered candidate CpGs TSV",
+        data=filtered_candidate_cpgs[cpg_table_cols].to_csv(index=False, sep="\t").encode("utf-8"),
+        file_name=f"{gene}_{tumor_type}_filtered_candidate_cpgs.tsv",
+        mime="text/tab-separated-values",
     )
 
 # ============================================================

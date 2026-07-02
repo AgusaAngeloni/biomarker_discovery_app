@@ -315,6 +315,7 @@ def load_region_candidate_cpgs(
         r.browser_start,
         r.browser_end,
         r.browser_length,
+        r.core_length,
         r.n_manifest_cpgs,
         COALESCE(seq.sequence_score, 0) AS sequence_score,
         brc.site_id,
@@ -414,6 +415,7 @@ def aggregate_gene_regions(cpgs: pd.DataFrame, apply_expression_filter: bool) ->
             "browser_start",
             "browser_end",
             "browser_length",
+            "core_length",
             "n_manifest_cpgs",
             "sequence_score",
             "start_pos",
@@ -441,6 +443,7 @@ def aggregate_gene_regions(cpgs: pd.DataFrame, apply_expression_filter: bool) ->
             genes_from_rows=("gene", join_gene_values),
             n_qualifying_sites=("site_id", "nunique"),
             n_manifest_cpgs=("n_manifest_cpgs", "max"),
+            sequence_size_core=("core_length", "max"),
             mean_delta=("delta_median", "mean"),
             mean_hi=("hi_index", "mean"),
             mean_normal_median=("normal_median", "mean"),
@@ -608,12 +611,12 @@ st.sidebar.header("CpG filters")
 tumor_label = st.sidebar.selectbox("Tumor Type", list(TUMOR_MAP.keys()))
 tumor_type = TUMOR_MAP[tumor_label]
 
-min_delta = st.sidebar.slider("Min Δβ", 0.0, 1.0, 0.50, 0.01)
+min_delta = st.sidebar.slider("Min Δβ", 0.0, 1.0, 0.55, 0.01)
 max_normal_median = st.sidebar.slider("Max Median NT β", 0.0, 1.0, 0.06, 0.01)
-max_pan_normal_median = st.sidebar.slider("Max Median PanCan NT β", 0.0, 1.0, 0.08, 0.01)
-max_pan_tumor_median = st.sidebar.slider("Max Median PanCan T β", 0.0, 1.0, 0.08, 0.01)
-max_leukocyte = st.sidebar.slider("Max Median PB β", 0.0, 1.0, 0.05, 0.01)
-min_hi = st.sidebar.slider("Min HI", 0.0, 5.0, 1.60, 0.05)
+max_pan_normal_median = st.sidebar.slider("Max Median PanCan NT β", 0.0, 1.0, 0.06, 0.01)
+max_pan_tumor_median = st.sidebar.slider("Max Median PanCan T β", 0.0, 1.0, 0.06, 0.01)
+max_leukocyte = st.sidebar.slider("Max Median PB β", 0.0, 1.0, 0.04, 0.01)
+min_hi = st.sidebar.slider("Min HI", 0.0, 5.0, 2.4, 0.05)
 
 st.sidebar.header("Methylation-Expression Association Filter")
 apply_expression_filter = st.sidebar.checkbox("Apply Methylation-Expression Association Filter", value=False)
@@ -621,7 +624,7 @@ max_mean_spearman_r = st.sidebar.slider(
     "Max Mean Methylation-Expression Association",
     -1.0,
     1.0,
-    -0.06,
+    -0.12,
     0.01,
     disabled=not apply_expression_filter,
 )
@@ -644,22 +647,22 @@ if not unfiltered_universe.empty:
     u1, u2, u3, u4 = st.columns(4)
     with u1:
         st.metric(
-            "CpGs before filters",
+            "CpGs mapped",
             f"{int(selected_universe_row['total_cpg_sites_before_filters']):,}",
         )
     with u2:
         st.metric(
-            "Genes before filters",
+            "Mapped Genes",
             f"{int(selected_universe_row['total_genes_before_filters']):,}",
         )
     with u3:
         st.metric(
-            "Regions before filters",
+            "Mapped Regions",
             f"{int(selected_universe_row['total_regions_before_filters']):,}",
         )
     with u4:
         st.metric(
-            "Region-CpG links",
+            "Mapped Region-CpG links",
             f"{int(selected_universe_row['total_region_cpg_links']):,}",
         )
 else:
@@ -788,6 +791,32 @@ else:
         ),
     )
 
+sequence_size_plot_df = plot_df[
+    pd.to_numeric(plot_df["sequence_size_core"], errors="coerce").fillna(0) > 0
+].copy()
+
+if sequence_size_plot_df.empty:
+    st.warning("No positive sequence_size_core values available for sequence-size plot.")
+else:
+    fig_sequence_size = make_region_scatter(
+        sequence_size_plot_df,
+        size_col="sequence_size_core",
+        title=f"{tumor_type} - HI vs Δβ sized by sequence size",
+        size_label="Sequence size",
+        size_max=55,
+        color_col="final_region_score",
+        color_label="Final region score",
+    )
+    st.plotly_chart(
+        fig_sequence_size,
+        use_container_width=True,
+        config=plot_svg_config(
+            filename=f"{tumor_type} - HI vs delta sized by sequence size",
+            height=700,
+            width=1400,
+        ),
+    )
+
 
 # ============================================================
 # Region table
@@ -801,6 +830,7 @@ region_cols = [
     "chr",
     "final_region_score",
     "sequence_score",
+    "sequence_size_core",
     "browser_start",
     "browser_end",
     "n_qualifying_sites",
@@ -829,10 +859,10 @@ st.dataframe(
 )
 
 st.download_button(
-    "Download region candidates CSV",
-    data=regions.to_csv(index=False).encode("utf-8"),
-    file_name=f"region_candidate_scatter_{tumor_type.lower()}.csv",
-    mime="text/csv",
+    "Download region candidates TSV",
+    data=regions.to_csv(index=False, sep="\t").encode("utf-8"),
+    file_name=f"region_candidate_scatter_{tumor_type.lower()}.tsv",
+    mime="text/tab-separated-values",
 )
 
 st.info(
