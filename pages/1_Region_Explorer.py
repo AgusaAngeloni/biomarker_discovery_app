@@ -282,6 +282,7 @@ def load_region_candidate_cpgs(
 ) -> pd.DataFrame:
     ts_cols = get_table_columns("tumor_summary")
     r_cols = get_table_columns("biomarker_region")
+    seq_cols = get_table_columns("biomarker_region_sequence_score")
 
     hi_expr = sql_col("ts", ts_cols, ["hi_index", "dispersion_index", "HI_index"], "NULL")
     pan_tumor_expr = sql_col(
@@ -297,6 +298,9 @@ def load_region_candidate_cpgs(
         "NULL",
     )
     genes_all_expr = sql_col("r", r_cols, ["gene_symbols_all"], 'r."gene_symbol"')
+    seq_score_expr = sql_col("seq", seq_cols, ["sequence_score"], "0")
+    gcgc_density_expr = sql_col("seq", seq_cols, ["gcgc_density_per_100bp"], "NULL")
+    gc_fraction_expr = sql_col("seq", seq_cols, ["gc_fraction"], "NULL")
 
     query = f"""
     WITH expr_best AS (
@@ -312,12 +316,16 @@ def load_region_candidate_cpgs(
         r.gene_symbol AS gene,
         {genes_all_expr} AS genes_all,
         r.chr,
+        r.core_start,
+        r.core_end,
         r.browser_start,
         r.browser_end,
         r.browser_length,
         r.core_length,
         r.n_manifest_cpgs,
-        COALESCE(seq.sequence_score, 0) AS sequence_score,
+        COALESCE({seq_score_expr}, 0) AS sequence_score,
+        {gcgc_density_expr} AS gcgc_density_per_100bp,
+        {gc_fraction_expr} AS gc_fraction,
         brc.site_id,
         brc.start_pos,
         ts.tumor_type,
@@ -412,12 +420,16 @@ def aggregate_gene_regions(cpgs: pd.DataFrame, apply_expression_filter: bool) ->
     out = clean_numeric(
         out,
         [
+            "core_start",
+            "core_end",
             "browser_start",
             "browser_end",
             "browser_length",
             "core_length",
             "n_manifest_cpgs",
             "sequence_score",
+            "gcgc_density_per_100bp",
+            "gc_fraction",
             "start_pos",
             "delta_median",
             "normal_median",
@@ -443,7 +455,11 @@ def aggregate_gene_regions(cpgs: pd.DataFrame, apply_expression_filter: bool) ->
             genes_from_rows=("gene", join_gene_values),
             n_qualifying_sites=("site_id", "nunique"),
             n_manifest_cpgs=("n_manifest_cpgs", "max"),
+            core_start=("core_start", "max"),
+            core_end=("core_end", "max"),
             sequence_size_core=("core_length", "max"),
+            gcgc_density_per_100bp=("gcgc_density_per_100bp", "max"),
+            gc_fraction=("gc_fraction", "max"),
             mean_delta=("delta_median", "mean"),
             mean_hi=("hi_index", "mean"),
             mean_normal_median=("normal_median", "mean"),
@@ -825,14 +841,15 @@ else:
 st.subheader("Region Candidate Table")
 
 region_cols = [
-    "gene_region_id",
     "gene_main",
     "chr",
     "final_region_score",
     "sequence_score",
+    "gcgc_density_per_100bp",
+    "gc_fraction",
     "sequence_size_core",
-    "browser_start",
-    "browser_end",
+    "core_start",
+    "core_end",
     "n_qualifying_sites",
     "n_manifest_cpgs",
     "fraction_qualifying_sites",
@@ -847,6 +864,7 @@ region_cols = [
     "region_ids",    
     "mean_spearman_r",
     "expression_signal",
+    "gene_region_id",
 ]
 visible_cols = [c for c in region_cols if c in regions.columns]
 
