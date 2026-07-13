@@ -44,6 +44,15 @@ def normalize_gene_symbol(gene: str) -> str:
     return str(gene).strip().upper()
 
 
+def get_lung_cross_tumor_type(tumor_type: str) -> str | None:
+    """Return the opposite NSCLC subtype used for cross-tumor filtering."""
+    if tumor_type == "LUAD":
+        return "LUSC"
+    if tumor_type == "LUSC":
+        return "LUAD"
+    return None
+
+
 def normalize_cpg_c_position(raw_pos: int, sequence: str, seq_start: int) -> int | None:
     """
     Convert a raw CpG coordinate into the actual C coordinate of the CpG
@@ -385,14 +394,28 @@ def load_gene_options(tumor_type: str, min_sites: int) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def load_gene_graph(gene: str, tumor_type: str) -> pd.DataFrame:
+def load_gene_graph(
+    gene: str,
+    tumor_type: str,
+    cross_tumor_type: str | None = None,
+) -> pd.DataFrame:
     """
     Load CpG-level methylation summaries for one gene and tumor type.
 
     The gene match is exact against cpg_gene_map.gene_symbol, avoiding false
     matches caused by compound manifest gene fields.
     """
-    query = """
+    cross_join = ""
+    cross_select = "NULL AS cross_tumor_type, NULL AS cross_tumor_median"
+    if cross_tumor_type in {"LUAD", "LUSC"}:
+        cross_join = """
+    LEFT JOIN tumor_summary ts_cross
+        ON ts_cross.site_id = ts.site_id
+       AND ts_cross.tumor_type = :cross_tumor_type
+        """
+        cross_select = "ts_cross.tumor_type AS cross_tumor_type, ts_cross.tumor_median AS cross_tumor_median"
+
+    query = f"""
     SELECT DISTINCT
         ca.site_id,
         cgm.gene_symbol AS gene,
@@ -402,6 +425,7 @@ def load_gene_graph(gene: str, tumor_type: str) -> pd.DataFrame:
         ts.delta_median,
         ts.hi_index,
         ts.tumor_median,
+        {cross_select},
         ts.normal_median,
         ts.pan_tumor_median AS pan_tumor_median,
         ts.pan_normal_median AS pan_normal_median,
@@ -417,6 +441,7 @@ def load_gene_graph(gene: str, tumor_type: str) -> pd.DataFrame:
     JOIN expression_correlation ec
         ON ts.site_id = ec.site_id
         AND ec.tumor_type = ts.tumor_type
+    {cross_join}
     WHERE
         cgm.gene_symbol = :gene
         AND ts.tumor_type = :tumor_type
@@ -424,13 +449,17 @@ def load_gene_graph(gene: str, tumor_type: str) -> pd.DataFrame:
     LIMIT 1000
     """
 
+    params = {
+        "gene": normalize_gene_symbol(gene),
+        "gene_pattern": f"%{normalize_gene_symbol(gene)}%",
+        "tumor_type": tumor_type,
+    }
+    if cross_tumor_type in {"LUAD", "LUSC"}:
+        params["cross_tumor_type"] = cross_tumor_type
+
     df = run_query(
         query,
-        params={
-            "gene": normalize_gene_symbol(gene),
-            "gene_pattern": f"%{normalize_gene_symbol(gene)}%",
-            "tumor_type": tumor_type,
-        },
+        params=params,
     )
 
     if df.empty:
@@ -443,6 +472,8 @@ def load_gene_graph(gene: str, tumor_type: str) -> pd.DataFrame:
         "hi_index",
         "tumor_median",
         "normal_median",
+        "cross_tumor_type",
+        "cross_tumor_median",
         "pan_tumor_median",
         "pan_normal_median",
         "leukocyte_median",
@@ -555,6 +586,8 @@ def load_filtered_candidate_region_cpgs_for_gene(
     max_pan_tumor_median: float,
     max_leukocyte: float,
     min_hi: float,
+    cross_tumor_type: str | None = None,
+    max_cross_tumor_median: float | None = None,
 ) -> pd.DataFrame:
     """
     Load CpGs inside physical regions that pass the selected candidate filters.
@@ -683,6 +716,18 @@ def load_filtered_candidate_region_cpgs_for_gene(
         """
         spearman_select = "eb.spearman_r AS spearman_r"
 
+    cross_join = ""
+    cross_select = "NULL AS cross_tumor_type, NULL AS cross_tumor_median"
+    cross_filter = ""
+    if cross_tumor_type in {"LUAD", "LUSC"} and max_cross_tumor_median is not None:
+        cross_join = """
+            LEFT JOIN tumor_summary ts_cross
+                ON ts_cross.site_id = brc.site_id
+               AND ts_cross.tumor_type = :cross_tumor_type
+        """
+        cross_select = "ts_cross.tumor_type AS cross_tumor_type, ts_cross.tumor_median AS cross_tumor_median"
+        cross_filter = "AND COALESCE(ts_cross.tumor_median, 1) <= :max_cross_tumor_median"
+
     query = f"""
     WITH
         {expr_cte}
@@ -712,6 +757,7 @@ def load_filtered_candidate_region_cpgs_for_gene(
                 ts.delta_median,
                 ts.tumor_median,
                 ts.normal_median,
+                {cross_select},
                 {pan_tumor_expr} AS pan_tumor_median,
                 {pan_normal_expr} AS pan_normal_median,
                 {hi_expr} AS hi_index,
@@ -727,6 +773,7 @@ def load_filtered_candidate_region_cpgs_for_gene(
             {seq_join}
             {cf_join}
             {expr_join}
+            {cross_join}
             {bcs_join}
             WHERE
                 (
@@ -740,6 +787,7 @@ def load_filtered_candidate_region_cpgs_for_gene(
                 AND COALESCE({pan_tumor_expr}, 1) <= :max_pan_tumor_median
                 AND COALESCE({leukocyte_select.split(" AS ")[0]}, 1) <= :max_leukocyte
                 AND COALESCE({hi_expr}, 0) >= :min_hi
+                {cross_filter}
         )
     SELECT *
     FROM candidate_cpgs
@@ -758,6 +806,8 @@ def load_filtered_candidate_region_cpgs_for_gene(
             "max_pan_tumor_median": float(max_pan_tumor_median),
             "max_leukocyte": float(max_leukocyte),
             "min_hi": float(min_hi),
+            "cross_tumor_type": cross_tumor_type,
+            "max_cross_tumor_median": float(max_cross_tumor_median) if max_cross_tumor_median is not None else None,
         },
     )
 
@@ -770,7 +820,7 @@ def load_filtered_candidate_region_cpgs_for_gene(
         "cpg_density_per_100bp", "region_rank_by_density", "sequence_score",
         "sequence_length", "n_c_sequence", "n_g_sequence", "n_cg_sequence", "n_gcgc",
         "gc_fraction", "start_pos", "cpg_order", "delta_median", "tumor_median",
-        "normal_median", "pan_tumor_median", "pan_normal_median", "hi_index",
+        "normal_median", "cross_tumor_median", "pan_tumor_median", "pan_normal_median", "hi_index",
         "leukocyte_median", "spearman_r", "biological_score", "delta_score",
         "normal_low_score", "leukocyte_low_score", "hi_score", "expression_score",
     ]
@@ -846,6 +896,8 @@ def aggregate_filtered_candidate_regions(
             max_tumor_median=("tumor_median", "max"),
             mean_normal_median=("normal_median", "mean"),
             min_normal_median=("normal_median", "min"),
+            mean_cross_tumor_median=("cross_tumor_median", "mean"),
+            max_cross_tumor_median=("cross_tumor_median", "max"),
             mean_pan_tumor_median=("pan_tumor_median", "mean"),
             mean_pan_normal_median=("pan_normal_median", "mean"),
             mean_leukocyte_median=("leukocyte_median", "mean"),
@@ -1146,6 +1198,22 @@ candidate_max_normal_median = st.sidebar.slider(
     0.01,
 )
 
+cross_tumor_type = get_lung_cross_tumor_type(tumor_type)
+if cross_tumor_type is not None:
+    candidate_max_cross_tumor_median = st.sidebar.slider(
+        f"Candidate Max Median {cross_tumor_type} T β",
+        0.0,
+        1.0,
+        0.06,
+        0.01,
+        help=(
+            f"Cross-subtype filter. When analyzing {tumor_type}, this keeps only CpGs "
+            f"with low tumor methylation in {cross_tumor_type}. Set to 1.00 to disable."
+        ),
+    )
+else:
+    candidate_max_cross_tumor_median = None
+
 candidate_max_pan_normal_median = st.sidebar.slider(
     "Candidate Max PanCan NT β",
     0.0,
@@ -1200,6 +1268,7 @@ candidate_max_mean_spearman_r = st.sidebar.slider(
 graph = load_gene_graph(
     gene=gene,
     tumor_type=tumor_type,
+    cross_tumor_type=cross_tumor_type,
 )
 
 if graph.empty:
@@ -1215,6 +1284,8 @@ for optional_col in [
     "leukocyte_median",
     "spearman_r",
     "hi_index",
+    "cross_tumor_median",
+    "cross_tumor_type",
 ]:
     if optional_col not in graph.columns:
         graph[optional_col] = np.nan
@@ -1235,6 +1306,8 @@ if show_filtered_candidate_regions:
             max_pan_tumor_median=candidate_max_pan_tumor_median,
             max_leukocyte=candidate_max_leukocyte,
             min_hi=candidate_min_hi,
+            cross_tumor_type=cross_tumor_type,
+            max_cross_tumor_median=candidate_max_cross_tumor_median,
         )
 
         filtered_candidate_regions = aggregate_filtered_candidate_regions(
@@ -1284,6 +1357,43 @@ site = graph["site_id"]
 positions = graph["start_pos"]
 
 median_tumor = graph["tumor_median"]
+cross_median_tumor = graph["cross_tumor_median"] if "cross_tumor_median" in graph.columns else pd.Series(np.nan, index=graph.index)
+
+selected_tumor_color = (
+    "rgba(18,144,152,1)" if tumor_type == "LUAD"
+    else "rgba(145,37,35,1)" if tumor_type == "LUSC"
+    else "rgba(18,144,152,1)"
+)
+selected_tumor_fill = (
+    "rgba(195,226,234, 1)" if tumor_type == "LUAD"
+    else "rgba(245,190,190,0.35)" if tumor_type == "LUSC"
+    else "rgba(195,226,234, 1)"
+)
+
+cross_tumor_color = (
+    "rgba(18,144,152,1)" if cross_tumor_type == "LUAD"
+    else "rgba(145,37,35,1)" if cross_tumor_type == "LUSC"
+    else "rgba(145,37,35,1)"
+)
+cross_tumor_fill = (
+    "rgba(195,226,234,0.35)" if cross_tumor_type == "LUAD"
+    else "rgba(245,190,190,0.35)" if cross_tumor_type == "LUSC"
+    else "rgba(245,190,190,0.35)"
+)
+
+selected_tumor_label = (
+    f"Median {tumor_type} T β" if tumor_type in {"LUAD", "LUSC"} else "Median Type T β"
+)
+cross_tumor_label = (
+    f"Median {cross_tumor_type} T β" if cross_tumor_type in {"LUAD", "LUSC"} else "Median cross T β"
+)
+
+show_cross_tumor_curve = (
+    cross_tumor_type is not None
+    and "cross_tumor_median" in graph.columns
+    and pd.to_numeric(graph["cross_tumor_median"], errors="coerce").notna().any()
+)
+
 median_normal = graph["normal_median"]
 pan_tumor = graph["pan_tumor_median"]
 pan_normal = graph["pan_normal_median"]
@@ -1312,18 +1422,37 @@ fig2.add_trace(
         x=positions,
         y=median_tumor,
         mode="lines",
-        name="Median Type T β",
+        name=selected_tumor_label,
         customdata=site,
         line=dict(
             width=3,
-            color="rgba(18,144,152,1)",
+            color=selected_tumor_color,
             shape="spline",
             smoothing=1.3,
         ),
         fill="tozeroy",
-        fillcolor="rgba(195,226,234, 1)",
+        fillcolor=selected_tumor_fill,
     )
 )
+
+if show_cross_tumor_curve:
+    fig2.add_trace(
+        go.Scatter(
+            x=positions,
+            y=cross_median_tumor,
+            mode="lines",
+            name=cross_tumor_label,
+            customdata=site,
+            line=dict(
+                width=3,
+                color=cross_tumor_color,
+                shape="spline",
+                smoothing=1.3,
+            ),
+            fill="tozeroy",
+            fillcolor=cross_tumor_fill,
+        )
+    )
 
 curves = [
     ("Median Type NT β", median_normal, "rgba(240,145,62,1)", "line", "y"),
@@ -1569,18 +1698,37 @@ fig3.add_trace(
         x=positions,
         y=median_tumor,
         mode="lines",
-        name="Median Type T β",
+        name=selected_tumor_label,
         customdata=site,
         line=dict(
             width=3,
-            color="rgba(18,144,152,1)",
+            color=selected_tumor_color,
             shape="spline",
             smoothing=1.3,
         ),
         fill="tozeroy",
-        fillcolor="rgba(195,226,234, 1)",
+        fillcolor=selected_tumor_fill,
     )
 )
+
+if show_cross_tumor_curve:
+    fig3.add_trace(
+        go.Scatter(
+            x=positions,
+            y=cross_median_tumor,
+            mode="lines",
+            name=cross_tumor_label,
+            customdata=site,
+            line=dict(
+                width=3,
+                color=cross_tumor_color,
+                shape="spline",
+                smoothing=1.3,
+            ),
+            fill="tozeroy",
+            fillcolor=cross_tumor_fill,
+        )
+    )
 
 curves = [
     ("Median Type NT β", median_normal, "rgba(240,145,62,1)"),
@@ -1708,7 +1856,8 @@ selected_candidate_region_for_browser = None
 st.subheader("Filtered candidate regions")
 st.caption(
     "These regions are calculated live from the selected filters. "
-    "No biomarker_candidate_region_curve table or parquet is required."
+    "For LUAD/LUSC, the cross-subtype median tumor filter is applied with one extra "
+    "join to tumor_summary by site_id and tumor_type."
 )
 
 if not show_filtered_candidate_regions:
@@ -1753,6 +1902,8 @@ else:
         "mean_hi",
         "mean_tumor_median",
         "mean_normal_median",
+        "mean_cross_tumor_median",
+        "max_cross_tumor_median",
         "mean_pan_tumor_median",
         "mean_pan_normal_median",
         "mean_leukocyte_median",
@@ -1834,6 +1985,8 @@ else:
         "tumor_type",
         "delta_median",
         "tumor_median",
+        "cross_tumor_type",
+        "cross_tumor_median",
         "normal_median",
         "pan_tumor_median",
         "pan_normal_median",

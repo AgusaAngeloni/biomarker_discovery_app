@@ -35,6 +35,15 @@ TUMOR_MAP = {
 }
 
 
+def get_lung_cross_tumor_type(tumor_type: str) -> str | None:
+    """Return the opposite NSCLC subtype used for cross-tumor filtering."""
+    if tumor_type == "LUAD":
+        return "LUSC"
+    if tumor_type == "LUSC":
+        return "LUAD"
+    return None
+
+
 @st.cache_data(ttl=600, show_spinner=False)
 def get_table_columns(table_name: str) -> set[str]:
     query = """
@@ -126,8 +135,11 @@ def alphabetic_category_orders(df: pd.DataFrame) -> dict[str, list[str]]:
 
 def plot_svg_config(filename: str, height: int = 700, width: int = 1400) -> dict:
     """
-    Plotly toolbar export configuration, matching the SVG download behavior
-    used in Gene Explorer.
+    Plotly toolbar SVG export configuration.
+
+    These dimensions match the fixed Plotly layout applied by
+    apply_gene_explorer_plot_style(), so downloaded SVGs keep the same
+    typography, color and text size used on screen.
     """
     return {
         "toImageButtonOptions": {
@@ -138,6 +150,110 @@ def plot_svg_config(filename: str, height: int = 700, width: int = 1400) -> dict
             "scale": 1,
         }
     }
+
+
+def apply_gene_explorer_plot_style(
+    fig: go.Figure,
+    height: int = 700,
+    width: int = 1400,
+) -> go.Figure:
+    """
+    Apply the same plot typography used by 2_Gene_Explorer.py.
+
+    The width/height are also set in the figure layout so the Plotly toolbar
+    SVG download keeps the same exported format, instead of relying only on
+    the browser-rendered size.
+
+    Style matched:
+    - Arial Narrow
+    - black text
+    - title size 20
+    - axis title/tick size 18
+    - legend size 18
+    """
+    gene_font = "Arial Narrow"
+
+    fig.update_layout(
+        template="plotly_white",
+        autosize=False,
+        width=width,
+        height=height,
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        hovermode="closest",
+        margin=dict(l=40, r=40, t=50, b=50),
+        font=dict(
+            family=gene_font,
+            color="black",
+        ),
+        title=dict(
+            x=0,
+            xanchor="left",
+            font=dict(
+                family=gene_font,
+                size=20,
+                color="black",
+            ),
+        ),
+        legend=dict(
+            orientation="v",
+            y=1,
+            x=1.06,
+            bgcolor="rgba(255,255,255,0)",
+            borderwidth=0,
+            groupclick="togglegroup",
+            tracegroupgap=1,
+            font=dict(
+                family=gene_font,
+                size=18,
+                color="black",
+            ),
+        ),
+        coloraxis_colorbar=dict(
+            title=dict(
+                font=dict(
+                    family=gene_font,
+                    size=18,
+                    color="black",
+                ),
+            ),
+            tickfont=dict(
+                family=gene_font,
+                size=18,
+                color="black",
+            ),
+        ),
+    )
+
+    fig.update_xaxes(
+        title_font=dict(
+            family=gene_font,
+            size=18,
+            color="black",
+        ),
+        tickfont=dict(
+            family=gene_font,
+            size=18,
+            color="black",
+        ),
+        showgrid=True,
+    )
+
+    fig.update_yaxes(
+        title_font=dict(
+            family=gene_font,
+            size=18,
+            color="black",
+        ),
+        tickfont=dict(
+            family=gene_font,
+            size=18,
+            color="black",
+        ),
+        showgrid=True,
+    )
+
+    return fig
 
 
 def extract_selected_table_row(table_event) -> int | None:
@@ -279,6 +395,8 @@ def load_region_candidate_cpgs(
     max_pan_tumor_median: float,
     max_leukocyte: float,
     min_hi: float,
+    cross_tumor_type: str | None = None,
+    max_cross_tumor_median: float | None = None,
 ) -> pd.DataFrame:
     ts_cols = get_table_columns("tumor_summary")
     r_cols = get_table_columns("biomarker_region")
@@ -301,6 +419,18 @@ def load_region_candidate_cpgs(
     seq_score_expr = sql_col("seq", seq_cols, ["sequence_score"], "0")
     gcgc_density_expr = sql_col("seq", seq_cols, ["gcgc_density_per_100bp"], "NULL")
     gc_fraction_expr = sql_col("seq", seq_cols, ["gc_fraction"], "NULL")
+
+    cross_join = ""
+    cross_select = "NULL AS cross_tumor_type, NULL AS cross_tumor_median"
+    cross_filter = ""
+    if cross_tumor_type in {"LUAD", "LUSC"} and max_cross_tumor_median is not None:
+        cross_join = """
+    LEFT JOIN tumor_summary ts_cross
+        ON ts_cross.site_id = ts.site_id
+       AND ts_cross.tumor_type = :cross_tumor_type
+        """
+        cross_select = "ts_cross.tumor_type AS cross_tumor_type, ts_cross.tumor_median AS cross_tumor_median"
+        cross_filter = "AND COALESCE(ts_cross.tumor_median, 1) <= :max_cross_tumor_median"
 
     query = f"""
     WITH expr_best AS (
@@ -331,6 +461,7 @@ def load_region_candidate_cpgs(
         ts.tumor_type,
         ts.delta_median,
         ts.normal_median,
+        {cross_select},
         {pan_tumor_expr} AS pan_tumor_median,
         {pan_normal_expr} AS pan_normal_median,
         {hi_expr} AS hi_index,
@@ -345,6 +476,7 @@ def load_region_candidate_cpgs(
         ON seq.region_id = r.region_id
     LEFT JOIN cpg_features cf
         ON cf.site_id = ts.site_id
+    {cross_join}
     LEFT JOIN expr_best eb
         ON eb.site_id = ts.site_id
        AND eb.tumor_type = ts.tumor_type
@@ -356,6 +488,7 @@ def load_region_candidate_cpgs(
         AND COALESCE({pan_tumor_expr}, 1) <= :max_pan_tumor_median
         AND COALESCE(cf.leukocyte_median, 1) <= :max_leukocyte
         AND COALESCE({hi_expr}, 0) >= :min_hi
+        {cross_filter}
     ORDER BY ts.delta_median DESC
     """
 
@@ -368,6 +501,10 @@ def load_region_candidate_cpgs(
         "max_leukocyte": float(max_leukocyte),
         "min_hi": float(min_hi),
     }
+    if cross_tumor_type in {"LUAD", "LUSC"} and max_cross_tumor_median is not None:
+        params["cross_tumor_type"] = cross_tumor_type
+        params["max_cross_tumor_median"] = float(max_cross_tumor_median)
+
     return run_query(query, params=params)
 
 
@@ -433,6 +570,7 @@ def aggregate_gene_regions(cpgs: pd.DataFrame, apply_expression_filter: bool) ->
             "start_pos",
             "delta_median",
             "normal_median",
+            "cross_tumor_median",
             "pan_tumor_median",
             "pan_normal_median",
             "hi_index",
@@ -463,6 +601,7 @@ def aggregate_gene_regions(cpgs: pd.DataFrame, apply_expression_filter: bool) ->
             mean_delta=("delta_median", "mean"),
             mean_hi=("hi_index", "mean"),
             mean_normal_median=("normal_median", "mean"),
+            mean_cross_tumor_median=("cross_tumor_median", "mean"),
             mean_pan_tumor_median=("pan_tumor_median", "mean"),
             mean_pan_normal_median=("pan_normal_median", "mean"),
             mean_leukocyte_median=("leukocyte_median", "mean"),
@@ -558,6 +697,29 @@ def make_region_scatter(
         errors="coerce"
     )
 
+    # For the methylation-expression bubble plot, expression_size is only a
+    # visual transform used for marker sizing:
+    #     expression_size = expression_signal ** 2 + 0.01
+    # The biologically interpretable value is expression_signal:
+    #     expression_signal = max(0, -mean_spearman_r)
+    # Keep both values available in hover so the plot does not show the
+    # transformed size as if it were the true expression association signal.
+    plot_df["_hover_mean_spearman_r"] = (
+        pd.to_numeric(plot_df.get("mean_spearman_r", np.nan), errors="coerce")
+        if "mean_spearman_r" in plot_df.columns
+        else np.nan
+    )
+    plot_df["_hover_expression_signal"] = (
+        pd.to_numeric(plot_df.get("expression_signal", np.nan), errors="coerce")
+        if "expression_signal" in plot_df.columns
+        else np.nan
+    )
+    plot_df["_hover_expression_size"] = (
+        pd.to_numeric(plot_df.get("expression_size", np.nan), errors="coerce")
+        if "expression_size" in plot_df.columns
+        else np.nan
+    )
+
     # -------------------------------
     # Hover gene
     # -------------------------------
@@ -592,6 +754,9 @@ def make_region_scatter(
             "_hover_gene",
             "_hover_region",
             "_hover_size_value",
+            "_hover_mean_spearman_r",
+            "_hover_expression_signal",
+            "_hover_expression_size",
         ],
         labels=labels,
         category_orders=category_orders,
@@ -599,21 +764,33 @@ def make_region_scatter(
         size_max=size_max,
     )
 
-    fig.update_traces(
-        hovertemplate=(
-            "<b>%{customdata[0]} | %{customdata[1]}</b><br>"
-            "Mean HI in region: %{x:.3f}<br>"
-            "Mean Δβ in region: %{y:.3f}<br>"
-            f"{size_label}: " + "%{customdata[2]:.3f}"
-            "<extra></extra>"
+    if size_col == "expression_size":
+        fig.update_traces(
+            hovertemplate=(
+                "<b>%{customdata[0]} | %{customdata[1]}</b><br>"
+                "Mean HI in region: %{x:.3f}<br>"
+                "Mean Δβ in region: %{y:.3f}<br>"
+                "Mean Spearman r: %{customdata[3]:.3f}<br>"
+                "Methylation-expression signal: %{customdata[4]:.3f}<br>"
+                "<extra></extra>"
+            )
         )
-    )
+    else:
+        fig.update_traces(
+            hovertemplate=(
+                "<b>%{customdata[0]} | %{customdata[1]}</b><br>"
+                "Mean HI in region: %{x:.3f}<br>"
+                "Mean Δβ in region: %{y:.3f}<br>"
+                f"{size_label}: " + "%{customdata[2]:.3f}"
+                "<extra></extra>"
+            )
+        )
 
     fig.update_layout(
-        height=700,
-        template="plotly_white",
         legend_traceorder="normal",
     )
+
+    fig = apply_gene_explorer_plot_style(fig, height=700, width=1400)
 
     return fig
 
@@ -629,6 +806,23 @@ tumor_type = TUMOR_MAP[tumor_label]
 
 min_delta = st.sidebar.slider("Min Δβ", 0.0, 1.0, 0.55, 0.01)
 max_normal_median = st.sidebar.slider("Max Median NT β", 0.0, 1.0, 0.06, 0.01)
+
+cross_tumor_type = get_lung_cross_tumor_type(tumor_type)
+if cross_tumor_type is not None:
+    max_cross_tumor_median = st.sidebar.slider(
+        f"Max Median {cross_tumor_type} T β",
+        0.0,
+        1.0,
+        0.06,
+        0.01,
+        help=(
+            f"Cross-subtype filter. When analyzing {tumor_type}, this keeps only CpGs "
+            f"with low tumor methylation in {cross_tumor_type}. Set to 1.00 to disable."
+        ),
+    )
+else:
+    max_cross_tumor_median = None
+
 max_pan_normal_median = st.sidebar.slider("Max Median PanCan NT β", 0.0, 1.0, 0.06, 0.01)
 max_pan_tumor_median = st.sidebar.slider("Max Median PanCan T β", 0.0, 1.0, 0.06, 0.01)
 max_leukocyte = st.sidebar.slider("Max Median PB β", 0.0, 1.0, 0.04, 0.01)
@@ -697,6 +891,8 @@ cpgs = load_region_candidate_cpgs(
     max_pan_tumor_median=max_pan_tumor_median,
     max_leukocyte=max_leukocyte,
     min_hi=min_hi,
+    cross_tumor_type=cross_tumor_type,
+    max_cross_tumor_median=max_cross_tumor_median,
 )
 
 if cpgs.empty:
@@ -771,7 +967,7 @@ fig_expression = make_region_scatter(
     plot_df,
     size_col="expression_size",
     title=f"{tumor_type} - Methylation-expression association Plot",
-    size_label="methylation-expression association signal",
+    size_label="Bubble size transform",
     size_max=45,
 )
 st.plotly_chart(
@@ -782,6 +978,11 @@ st.plotly_chart(
         height=700,
         width=1400,
     ),
+)
+st.caption(
+    "In this plot, marker size uses expression_size = expression_signal² + 0.01. "
+    "The hover now reports the true methylation-expression signal separately: "
+    "expression_signal = max(0, -mean Spearman r)."
 )
 
 score_plot_df = plot_df[pd.to_numeric(plot_df["final_region_score"], errors="coerce").fillna(0) > 0].copy()
@@ -856,6 +1057,7 @@ region_cols = [
     "mean_delta",
     "mean_hi",
     "mean_normal_median",
+    "mean_cross_tumor_median",
     "mean_pan_tumor_median",
     "mean_pan_normal_median",
     "mean_leukocyte_median",
@@ -885,8 +1087,10 @@ st.download_button(
 
 st.info(
     "Score: sequence_site_score = sequence_score × n_qualifying_sites. "
-    "If Add expression to score is enabled: final_region_score = sequence_site_score + "
-    "(100 × max(0, -mean_methylation_expression_Max Tumor Median βMax Tumor Median βassociation) × n_qualifying_sites)."
+    "If the expression filter is enabled, final_region_score also includes "
+    "100 × max(0, -mean methylation-expression association) × n_qualifying_sites. "
+    "For LUAD/LUSC only, the optional cross-subtype filter adds one indexed join "
+    "to tumor_summary by site_id and tumor_type, so it should remain lightweight."
 )
 
 
