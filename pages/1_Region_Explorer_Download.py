@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import copy
+import re
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -20,7 +22,6 @@ st.set_page_config(
     page_icon="🧬",
     layout="wide",
 )
-
 st.title("Region Candidate Explorer")
 
 # ============================================================
@@ -156,12 +157,12 @@ def apply_gene_explorer_plot_style(
     fig: go.Figure,
     height: int = 700,
     width: int = 1400,
-    title_size: int = 24,
-    axis_title_size: int = 30,
-    axis_tick_size: int = 28,
-    legend_size: int = 22,
-    colorbar_title_size: int = 22,
-    colorbar_tick_size: int = 20,
+    title_size: int = 20,
+    axis_title_size: int = 18,
+    axis_tick_size: int = 18,
+    legend_size: int = 18,
+    colorbar_title_size: int = 18,
+    colorbar_tick_size: int = 18,
 ) -> go.Figure:
     gene_font = "Arial Narrow"
 
@@ -246,6 +247,85 @@ def apply_gene_explorer_plot_style(
     )
 
     return fig
+
+
+def make_large_font_export_figure(
+    fig: go.Figure,
+    title_size: int = 30,
+    axis_title_size: int = 28,
+    axis_tick_size: int = 26,
+    legend_size: int = 22,
+    colorbar_title_size: int = 24,
+    colorbar_tick_size: int = 22,
+) -> go.Figure:
+    """
+    Copy the on-screen Plotly figure and change only font sizes.
+
+    The copied figure keeps the original traces, marker colors, marker sizes,
+    color scales, dimensions, margins and legend position.
+    """
+    fig_export = copy.deepcopy(fig)
+
+    fig_export.update_layout(
+        title=dict(font=dict(size=title_size)),
+        legend=dict(font=dict(size=legend_size)),
+    )
+
+    fig_export.update_xaxes(
+        title_font=dict(size=axis_title_size),
+        tickfont=dict(size=axis_tick_size),
+    )
+
+    fig_export.update_yaxes(
+        title_font=dict(size=axis_title_size),
+        tickfont=dict(size=axis_tick_size),
+    )
+
+    if "coloraxis" in fig_export.layout:
+        fig_export.update_layout(
+            coloraxis_colorbar=dict(
+                title=dict(font=dict(size=colorbar_title_size)),
+                tickfont=dict(size=colorbar_tick_size),
+            )
+        )
+
+    return fig_export
+
+
+def show_large_font_svg_export(
+    fig: go.Figure,
+    filename: str,
+    expander_label: str,
+) -> None:
+    """
+    Show a second browser-rendered Plotly figure for SVG export.
+
+    The download is performed from Plotly's camera button, not through Kaleido.
+    This preserves the same browser-rendered colors as the interactive chart.
+    """
+    fig_export = make_large_font_export_figure(fig)
+    width = int(fig.layout.width or 1400)
+    height = int(fig.layout.height or 700)
+    export_key = re.sub(r"[^A-Za-z0-9_-]+", "_", filename)
+
+    with st.expander(expander_label, expanded=False):
+        st.caption(
+            "Open this preview and use the camera icon in the Plotly toolbar. "
+            "The SVG keeps the same dimensions, colors, markers and layout; "
+            "only the font is larger."
+        )
+        st.plotly_chart(
+            fig_export,
+            use_container_width=True,
+            key=f"svg_export_{export_key}",
+            config=plot_svg_config(
+                filename=filename,
+                height=height,
+                width=width,
+            ),
+        )
+
+
 
 def extract_selected_table_row(table_event) -> int | None:
     """Extract selected row index from st.dataframe(..., on_select='rerun')."""
@@ -688,13 +768,9 @@ def make_region_scatter(
         errors="coerce"
     )
 
-    # For the methylation-expression bubble plot, expression_size is only a
-    # visual transform used for marker sizing:
-    #     expression_size = expression_signal ** 2 + 0.01
-    # The biologically interpretable value is expression_signal:
+    # For the methylation-expression bubble plot, marker size uses the
+    # biologically interpretable value:
     #     expression_signal = max(0, -mean_spearman_r)
-    # Keep both values available in hover so the plot does not show the
-    # transformed size as if it were the true expression association signal.
     plot_df["_hover_mean_spearman_r"] = (
         pd.to_numeric(plot_df.get("mean_spearman_r", np.nan), errors="coerce")
         if "mean_spearman_r" in plot_df.columns
@@ -755,7 +831,7 @@ def make_region_scatter(
         size_max=size_max,
     )
 
-    if size_col == "expression_size":
+    if size_col == "expression_signal":
         fig.update_traces(
             hovertemplate=(
                 "<b>%{customdata[0]} | %{customdata[1]}</b><br>"
@@ -828,6 +904,16 @@ max_mean_spearman_r = st.sidebar.slider(
     -0.16,
     0.01,
     disabled=not apply_expression_filter,
+)
+
+st.sidebar.header("Export")
+enable_large_font_svg_export = st.sidebar.checkbox(
+    "Show SVG export previews with larger font",
+    value=False,
+    help=(
+        "Keeps the main plots unchanged and adds browser-rendered export previews. "
+        "Download each SVG from the Plotly camera icon."
+    ),
 )
 
 # ============================================================
@@ -953,12 +1039,18 @@ st.plotly_chart(
         width=1400,
     ),
 )
+if enable_large_font_svg_export:
+    show_large_font_svg_export(
+        fig_sites,
+        filename=f"{tumor_type}_DMR_plot_larger_font",
+        expander_label="DMR plot — SVG export with larger font",
+    )
 
 fig_expression = make_region_scatter(
     plot_df,
-    size_col="expression_size",
+    size_col="expression_signal",
     title=f"{tumor_type} - Methylation-expression association Plot",
-    size_label="Bubble size transform",
+    size_label="Methylation-expression signal",
     size_max=45,
 )
 st.plotly_chart(
@@ -970,6 +1062,12 @@ st.plotly_chart(
         width=1400,
     ),
 )
+if enable_large_font_svg_export:
+    show_large_font_svg_export(
+        fig_expression,
+        filename=f"{tumor_type}_methylation_expression_plot_larger_font",
+        expander_label="Methylation-expression plot — SVG export with larger font",
+    )
 
 score_plot_df = plot_df[pd.to_numeric(plot_df["final_region_score"], errors="coerce").fillna(0) > 0].copy()
 if score_plot_df.empty:
@@ -993,6 +1091,12 @@ else:
             width=1400,
         ),
     )
+    if enable_large_font_svg_export:
+        show_large_font_svg_export(
+            fig_score,
+            filename=f"{tumor_type}_region_score_plot_larger_font",
+            expander_label="Region score plot — SVG export with larger font",
+        )
 
 sequence_size_plot_df = plot_df[
     pd.to_numeric(plot_df["sequence_size_core"], errors="coerce").fillna(0) > 0
@@ -1021,6 +1125,7 @@ region_cols = [
     "mean_delta",
     "mean_hi",
     "mean_normal_median",
+    "mean_cross_tumor_median",
     "mean_pan_tumor_median",
     "mean_pan_normal_median",
     "mean_leukocyte_median",

@@ -13,3 +13,4 @@ gtfparse
 python-dotenv
 openpyxl
 matplotlib
+

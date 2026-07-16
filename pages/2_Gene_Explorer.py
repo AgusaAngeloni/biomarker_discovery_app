@@ -1114,8 +1114,8 @@ st.markdown(
 st.sidebar.header("Filters")
 
 tumor_map = {
-    "CRC (COAD)": "COAD",
-    "HCC (LIHC)": "LIHC",
+    "COAD (CRC)": "COAD",
+    "LIHC (HCC)": "LIHC",
     "LUAD": "LUAD",
     "LUSC": "LUSC"
 }
