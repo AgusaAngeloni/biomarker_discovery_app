@@ -871,13 +871,13 @@ st.sidebar.header("CpG filters")
 tumor_label = st.sidebar.selectbox("Tumor Type", list(TUMOR_MAP.keys()))
 tumor_type = TUMOR_MAP[tumor_label]
 
-min_delta = st.sidebar.slider("Min Δβ", 0.0, 1.0, 0.55, 0.01)
-max_normal_median = st.sidebar.slider("Max Median NT β", 0.0, 1.0, 0.06, 0.01)
+min_delta = st.sidebar.slider("Δβ", 0.0, 1.0, 0.55, 0.01)
+max_normal_median = st.sidebar.slider("Median NT β", 0.0, 1.0, 0.06, 0.01)
 
 cross_tumor_type = get_lung_cross_tumor_type(tumor_type)
 if cross_tumor_type is not None:
     max_cross_tumor_median = st.sidebar.slider(
-        f"Max Median {cross_tumor_type} T β",
+        f"Median {cross_tumor_type} T β",
         0.0,
         1.0,
         0.06,
@@ -890,15 +890,15 @@ if cross_tumor_type is not None:
 else:
     max_cross_tumor_median = None
 
-max_pan_normal_median = st.sidebar.slider("Max Median PanCan NT β", 0.0, 1.0, 0.06, 0.01)
-max_pan_tumor_median = st.sidebar.slider("Max Median PanCan T β", 0.0, 1.0, 0.06, 0.01)
-max_pb = st.sidebar.slider("Max Median PB β", 0.0, 1.0, 0.04, 0.01)
-min_hi = st.sidebar.slider("Min HI", 0.0, 5.0, 2.4, 0.05)
+max_pan_normal_median = st.sidebar.slider("Median PanCan NT β", 0.0, 1.0, 0.06, 0.01)
+max_pan_tumor_median = st.sidebar.slider("Median PanCan T β", 0.0, 1.0, 0.06, 0.01)
+max_pb = st.sidebar.slider("Median PB β", 0.0, 1.0, 0.04, 0.01)
+min_hi = st.sidebar.slider("HI", 0.0, 5.0, 2.4, 0.05)
 
 st.sidebar.header("Methylation-Expression Association Filter")
 apply_expression_filter = st.sidebar.checkbox("Apply Methylation-Expression Association Filter", value=False)
 max_mean_spearman_r = st.sidebar.slider(
-    "Max Mean Methylation-Expression Association",
+    "Mean Methylation-Expression Association",
     -1.0,
     1.0,
     -0.16,
@@ -1026,7 +1026,7 @@ plot_df = plot_df.sort_values("gene_main", ascending=True).reset_index(drop=True
 fig_sites = make_region_scatter(
     plot_df,
     size_col="n_qualifying_sites",
-    title=f"{tumor_type} - DMR Plot",
+    title=f"{tumor_type} - Region-level Biomarker Candidate Plot",
     size_label="Qualifying CpGs in region",
     size_max=45,
 )
@@ -1034,7 +1034,7 @@ st.plotly_chart(
     fig_sites,
     use_container_width=True,
     config=plot_svg_config(
-        filename=f"{tumor_type} - DMR Plot",
+        filename=f"{tumor_type} - Region-level Biomarker Candidate Plot",
         height=700,
         width=1400,
     ),
@@ -1042,8 +1042,8 @@ st.plotly_chart(
 if enable_large_font_svg_export:
     show_large_font_svg_export(
         fig_sites,
-        filename=f"{tumor_type}_DMR_plot_larger_font",
-        expander_label="DMR plot — SVG export with larger font",
+        filename=f"{tumor_type}_Candidate_Plot",
+        expander_label="Region_Level Biomarker Candidate plot — SVG export with larger font",
     )
 
 fig_expression = make_region_scatter(

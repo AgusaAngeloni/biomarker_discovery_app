@@ -1183,7 +1183,7 @@ show_filtered_candidate_regions = st.sidebar.checkbox(
 )
 
 candidate_min_delta = st.sidebar.slider(
-    "Candidate Min Δβ",
+    "Δβ",
     0.0,
     1.0,
     0.50,
@@ -1191,7 +1191,7 @@ candidate_min_delta = st.sidebar.slider(
 )
 
 candidate_max_normal_median = st.sidebar.slider(
-    "Candidate Max Median NT β",
+    "Median NT β",
     0.0,
     1.0,
     0.06,
@@ -1201,7 +1201,7 @@ candidate_max_normal_median = st.sidebar.slider(
 cross_tumor_type = get_lung_cross_tumor_type(tumor_type)
 if cross_tumor_type is not None:
     candidate_max_cross_tumor_median = st.sidebar.slider(
-        f"Candidate Max Median {cross_tumor_type} T β",
+        f"Median {cross_tumor_type} T β",
         0.0,
         1.0,
         0.06,
@@ -1215,7 +1215,7 @@ else:
     candidate_max_cross_tumor_median = None
 
 candidate_max_pan_normal_median = st.sidebar.slider(
-    "Candidate Max PanCan NT β",
+    "Median PanCan NT β",
     0.0,
     1.0,
     0.08,
@@ -1223,7 +1223,7 @@ candidate_max_pan_normal_median = st.sidebar.slider(
 )
 
 candidate_max_pan_tumor_median = st.sidebar.slider(
-    "Candidate Max PanCan T β",
+    "Median PanCan T β",
     0.0,
     1.0,
     0.08,
@@ -1231,7 +1231,7 @@ candidate_max_pan_tumor_median = st.sidebar.slider(
 )
 
 candidate_max_pb = st.sidebar.slider(
-    "Candidate Max PB β",
+    "Median PB β",
     0.0,
     1.0,
     0.05,
@@ -1239,7 +1239,7 @@ candidate_max_pb = st.sidebar.slider(
 )
 
 candidate_min_hi = st.sidebar.slider(
-    "Candidate Min HI",
+    "HI",
     0.0,
     5.0,
     1.60,
@@ -1252,7 +1252,7 @@ candidate_apply_expression_filter = st.sidebar.checkbox(
 )
 
 candidate_max_mean_spearman_r = st.sidebar.slider(
-    "Candidate Max Mean Methylation-Expression Association",
+    "Mean Methylation-Expression Association",
     -1.0,
     1.0,
     -0.06,
