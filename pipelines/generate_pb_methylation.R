@@ -1,11 +1,11 @@
 ############################################################
-# Script name: generate_leukocytes_data.R
+# Script name: generate_pb_data.R
 # Description: Generate a genome-wide DNA methylation 
-# beta-value matrix from leukocyte IDAT files using the 
+# beta-value matrix from PB IDAT files using the 
 # sesame preprocessing framework.
 #
 # Raw IDAT files were downloaded from GEO and correspond
-# to peripheral blood leukocyte samples profiled using
+# to peripheral blood PB samples profiled using
 # the Illumina Infinium MethylationEPIC array.
 #
 # GEO Series:
@@ -34,7 +34,7 @@
 # data/geo/IDATS/
 #
 # Output:
-# data/methy_leucocyte.parquet
+# data/methy_pb.parquet
 #
 # Requirements:
 # - R >= 4.3
@@ -57,30 +57,30 @@ library(arrow)
 
 # ---- Input directory containing IDAT files ----
 
-idat_leucos <- "data/geo/IDATS"
+idat_pb <- "data/geo/IDATS"
 
 # ---- Read and preprocess methylation data ----
 
-betasAllLeucos <- openSesame(
-  idat_leucos,
+betasAllpb <- openSesame(
+  idat_pb,
   prep = "QCDPB"
 )
 
 # ---- Convert to data frame ----
 
-betasAllLeucosdf <- as.data.frame(
-  betasAllLeucos
+betasAllpbdf <- as.data.frame(
+  betasAllpb
 )
 
 # Add probe identifiers
 
-betasAllLeucosdf$site_id <- rownames(
-  betasAllLeucos
+betasAllpbdf$site_id <- rownames(
+  betasAllpb
 )
 
 # ---- Export parquet file ----
 
 write_parquet(
-  betasAllLeucosdf,
-  "data/raw/methy_leucocyte.parquet"
+  betasAllpbf,
+  "data/raw/methy_pb.parquet"
 )

@@ -1,6 +1,6 @@
 # MethyMarker — Cancer Methylation Biomarker Discovery App
 
-Interactive and reproducible platform for prioritizing DNA methylation biomarker candidates across TCGA tumor cohorts. The project integrates tumor/normal methylation summaries, pan-cancer background, leukocyte methylation reference profiles, CpG-to-gene annotation, methylation-expression correlation, physical CpG regions, and sequence-context scores into a PostgreSQL-backed Streamlit application.
+Interactive and reproducible platform for prioritizing DNA methylation biomarker candidates across TCGA tumor cohorts. The project integrates tumor/normal methylation summaries, pan-cancer background, PB methylation reference profiles, CpG-to-gene annotation, methylation-expression correlation, physical CpG regions, and sequence-context scores into a PostgreSQL-backed Streamlit application.
 
 The current workflow is **region-first**. CpG sites remain the primary evidence unit, but the user-facing biomarker candidate is a **physical CpG region** supported by one or more qualifying CpGs.
 
@@ -8,7 +8,7 @@ The current workflow is **region-first**. CpG sites remain the primary evidence 
 
 ## Project overview
 
-DNA methylation is frequently altered in cancer and can provide candidate biomarkers when tumor specificity, normal-tissue background, leukocyte background, gene context, expression association, and local sequence structure are considered together.
+DNA methylation is frequently altered in cancer and can provide candidate biomarkers when tumor specificity, normal-tissue background, PB background, gene context, expression association, and local sequence structure are considered together.
 
 This repository contains:
 
@@ -21,7 +21,7 @@ The application supports:
 
 - tumor-vs-normal methylation comparison;
 - pan-cancer background comparison;
-- leukocyte methylation filtering;
+- PB methylation filtering;
 - CpG-to-gene mapping;
 - methylation-expression correlation;
 - physical CpG-region aggregation;
@@ -43,7 +43,7 @@ biomarker_discovery_app/
 │   └── pages_README.md
 │
 ├── pipelines/
-│   ├── generate_leukocytes_methylation.R
+│   ├── generate_pb_methylation.R
 │   ├── 01_clean_manifiesto.py
 │   ├── 02_clean_phenotype.py
 │   ├── 03_methy_download_clean_v2.py
@@ -99,7 +99,7 @@ Large raw and intermediate data files are not expected to be versioned in Git. T
 | TCGA methylation | UCSC Xena / GDC Pan-Cancer HumanMethylation450K | Provides CpG beta-values used for tumor/normal and pan-cancer summaries. |
 | TCGA expression | UCSC Xena / GDC Pan-Cancer RNA-seq | Used to estimate methylation-expression association for CpG-gene pairs. |
 | CpG annotation | HumanMethylation450K manifest mapped to hg38 | Provides CpG IDs, genomic coordinates, gene annotations, and CpG island context. |
-| Leukocyte methylation | GEO IDAT files processed with `sesame` | Provides a blood-cell background filter for biomarker specificity. |
+| PB methylation | GEO IDAT files processed with `sesame` | Provides a blood-cell background filter for biomarker specificity. |
 | Gene annotation | GENCODE / Ensembl-derived annotation | Provides gene coordinates, strand, TSS, and gene symbols. |
 | DNA sequence | Local hg38 FASTA | Used to compute sequence-context features for physical CpG regions. |
 
@@ -120,7 +120,7 @@ Build gene annotation and CpG-to-gene maps
         ↓
 Preprocess expression and compute CpG-gene correlations
         ↓
-Generate leukocyte methylation background features
+Generate PB methylation background features
         ↓
 Build tumor-independent physical CpG regions
         ↓
@@ -151,7 +151,7 @@ The separation between **physical region definition**, **sequence-context scorin
 | `data/raw/cpg_gene_map.parquet` | Expanded CpG-to-gene bridge table. |
 | `data/raw/expr.parquet` | Filtered and log-transformed expression matrix. |
 | `data/raw/expression_correlation.parquet` | CpG-gene methylation-expression correlation table. |
-| `data/raw/cpg_features.parquet` | Leukocyte methylation background features. |
+| `data/raw/cpg_features.parquet` | PB methylation background features. |
 | `data/raw/tumor_types.parquet` | Tumor-type lookup table. |
 | `data/biomarkers/biomarker_region.parquet` | Tumor-independent physical CpG region table. |
 | `data/biomarkers/biomarker_region_cpg.parquet` | Bridge table linking regions to CpGs. |
@@ -221,7 +221,7 @@ python pipelines/build_postgres.py
 Run scripts from the project root.
 
 ```bash
-Rscript pipelines/generate_leukocytes_methylation.R
+Rscript pipelines/generate_pb_methylation.R
 
 python pipelines/01_clean_manifiesto.py
 python pipelines/02_clean_phenotype.py
@@ -323,7 +323,7 @@ Gene-level validation page. It shows the methylation profile across the selected
 
 ## Suggested methods statement
 
-TCGA HumanMethylation450K beta-values, phenotype metadata, and RNA-seq expression data were processed together with CpG manifest annotation, leukocyte methylation reference profiles, and gene annotation. CpG-level tumor/normal methylation summaries were computed by tumor type and compared against pan-cancer background summaries. CpG-gene methylation-expression associations were estimated using Spearman correlation in tumor samples. Tumor-independent physical CpG regions were generated from manifest coordinates and annotated with sequence-context features from an hg38 reference FASTA. Processed outputs were loaded into PostgreSQL and explored through an interactive Streamlit application for region-level biomarker prioritization and gene-level validation.
+TCGA HumanMethylation450K beta-values, phenotype metadata, and RNA-seq expression data were processed together with CpG manifest annotation, PB methylation reference profiles, and gene annotation. CpG-level tumor/normal methylation summaries were computed by tumor type and compared against pan-cancer background summaries. CpG-gene methylation-expression associations were estimated using Spearman correlation in tumor samples. Tumor-independent physical CpG regions were generated from manifest coordinates and annotated with sequence-context features from an hg38 reference FASTA. Processed outputs were loaded into PostgreSQL and explored through an interactive Streamlit application for region-level biomarker prioritization and gene-level validation.
 
 ---
 

@@ -10,7 +10,7 @@ Purpose
 To generate a normalized region model for PostgreSQL and
 Streamlit. Regions are defined from CpG genomic proximity and
 manifest annotation, not from tumor-specific methylation,
-expression, leukocyte methylation, or biological scores.
+expression, PB methylation, or biological scores.
 
 Inputs
 ------

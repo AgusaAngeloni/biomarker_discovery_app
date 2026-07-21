@@ -64,7 +64,7 @@ dependencies:
   - jupyterlab
 
   # =========================================================
-  # R base for leukocyte preprocessing script
+  # R base for PB preprocessing script
   # =========================================================
   - r-base
   - r-essentials

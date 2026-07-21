@@ -10,7 +10,7 @@ Purpose
 To annotate each gene region with local sequence context and
 calculate a reproducible sequence_score. This score captures the
 sequence composition of the region and can be combined downstream
-with tumor-specific methylation, expression, leukocyte background,
+with tumor-specific methylation, expression, PB background,
 and biological evidence.
 
 Inputs

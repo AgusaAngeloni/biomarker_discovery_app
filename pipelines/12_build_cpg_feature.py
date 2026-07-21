@@ -10,7 +10,7 @@ from pathlib import Path
 # ============================================================
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data" / "raw"
-METHY_PATH = DATA_DIR / "methy_leucocyte.parquet"
+METHY_PATH = DATA_DIR / "methy_pb.parquet"
 MANIFEST_PATH = DATA_DIR / "manifest_clean.parquet"
 OUTPUT_PATH = DATA_DIR / "cpg_features.parquet"
 MAX_NA_FRAC = 0.20
@@ -135,8 +135,8 @@ std = np.std(
 
 cpg_feature = pd.DataFrame({
     "site_id": df["site_id"].values,
-    "leukocyte_median": median,
-    "leukocyte_std": std,
+    "pb_median": median,
+    "pb_std": std,
     "n_samples": n_samples
 })
 

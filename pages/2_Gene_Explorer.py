@@ -429,7 +429,7 @@ def load_gene_graph(
         ts.normal_median,
         ts.pan_tumor_median AS pan_tumor_median,
         ts.pan_normal_median AS pan_normal_median,
-        cf.leukocyte_median,
+        cf.pb_median,
         ec.spearman_r
     FROM tumor_summary ts
     JOIN cpg_annotation ca
@@ -476,7 +476,7 @@ def load_gene_graph(
         "cross_tumor_median",
         "pan_tumor_median",
         "pan_normal_median",
-        "leukocyte_median",
+        "pb_median",
         "spearman_r",
     ]
 
@@ -584,7 +584,7 @@ def load_filtered_candidate_region_cpgs_for_gene(
     max_normal_median: float,
     max_pan_normal_median: float,
     max_pan_tumor_median: float,
-    max_leukocyte: float,
+    max_pb: float,
     min_hi: float,
     cross_tumor_type: str | None = None,
     max_cross_tumor_median: float | None = None,
@@ -645,20 +645,20 @@ def load_filtered_candidate_region_cpgs_for_gene(
         """
 
     cf_join = ""
-    leukocyte_select = "NULL AS leukocyte_median"
+    pb_select = "NULL AS pb_median"
     if cf_cols:
         cf_join = """
         LEFT JOIN cpg_features cf
             ON cf.site_id = brc.site_id
         """
-        leukocyte_select = f'{sql_col("cf", cf_cols, ["leukocyte_median"], "NULL")} AS leukocyte_median'
+        pb_select = f'{sql_col("cf", cf_cols, ["pb_median"], "NULL")} AS pb_median'
 
     bcs_join = ""
     bcs_select = """
         NULL AS biological_score,
         NULL AS delta_score,
         NULL AS normal_low_score,
-        NULL AS leukocyte_low_score,
+        NULL AS pb_low_score,
         NULL AS hi_score,
         NULL AS expression_score,
         NULL AS passes_loose_seed,
@@ -687,7 +687,7 @@ def load_filtered_candidate_region_cpgs_for_gene(
             {sql_col("bcs", bcs_cols, ["biological_score"], "NULL")} AS biological_score,
             {sql_col("bcs", bcs_cols, ["delta_score"], "NULL")} AS delta_score,
             {sql_col("bcs", bcs_cols, ["normal_low_score"], "NULL")} AS normal_low_score,
-            {sql_col("bcs", bcs_cols, ["leukocyte_low_score"], "NULL")} AS leukocyte_low_score,
+            {sql_col("bcs", bcs_cols, ["pb_low_score"], "NULL")} AS pb_low_score,
             {sql_col("bcs", bcs_cols, ["hi_score"], "NULL")} AS hi_score,
             {sql_col("bcs", bcs_cols, ["expression_score"], "NULL")} AS expression_score,
             {sql_col("bcs", bcs_cols, ["passes_loose_seed"], "NULL")} AS passes_loose_seed,
@@ -761,7 +761,7 @@ def load_filtered_candidate_region_cpgs_for_gene(
                 {pan_tumor_expr} AS pan_tumor_median,
                 {pan_normal_expr} AS pan_normal_median,
                 {hi_expr} AS hi_index,
-                {leukocyte_select},
+                {pb_select},
                 {spearman_select},
                 {bcs_select}
             FROM biomarker_region r
@@ -785,7 +785,7 @@ def load_filtered_candidate_region_cpgs_for_gene(
                 AND ts.normal_median <= :max_normal_median
                 AND COALESCE({pan_normal_expr}, 1) <= :max_pan_normal_median
                 AND COALESCE({pan_tumor_expr}, 1) <= :max_pan_tumor_median
-                AND COALESCE({leukocyte_select.split(" AS ")[0]}, 1) <= :max_leukocyte
+                AND COALESCE({pb_select.split(" AS ")[0]}, 1) <= :max_pb
                 AND COALESCE({hi_expr}, 0) >= :min_hi
                 {cross_filter}
         )
@@ -804,7 +804,7 @@ def load_filtered_candidate_region_cpgs_for_gene(
             "max_normal_median": float(max_normal_median),
             "max_pan_normal_median": float(max_pan_normal_median),
             "max_pan_tumor_median": float(max_pan_tumor_median),
-            "max_leukocyte": float(max_leukocyte),
+            "max_pb": float(max_pb),
             "min_hi": float(min_hi),
             "cross_tumor_type": cross_tumor_type,
             "max_cross_tumor_median": float(max_cross_tumor_median) if max_cross_tumor_median is not None else None,
@@ -821,8 +821,8 @@ def load_filtered_candidate_region_cpgs_for_gene(
         "sequence_length", "n_c_sequence", "n_g_sequence", "n_cg_sequence", "n_gcgc",
         "gc_fraction", "start_pos", "cpg_order", "delta_median", "tumor_median",
         "normal_median", "cross_tumor_median", "pan_tumor_median", "pan_normal_median", "hi_index",
-        "leukocyte_median", "spearman_r", "biological_score", "delta_score",
-        "normal_low_score", "leukocyte_low_score", "hi_score", "expression_score",
+        "pb_median", "spearman_r", "biological_score", "delta_score",
+        "normal_low_score", "pb_low_score", "hi_score", "expression_score",
     ]
 
     for col in numeric_cols:
@@ -900,15 +900,15 @@ def aggregate_filtered_candidate_regions(
             max_cross_tumor_median=("cross_tumor_median", "max"),
             mean_pan_tumor_median=("pan_tumor_median", "mean"),
             mean_pan_normal_median=("pan_normal_median", "mean"),
-            mean_leukocyte_median=("leukocyte_median", "mean"),
-            min_leukocyte_median=("leukocyte_median", "min"),
+            mean_pb_median=("pb_median", "mean"),
+            min_pb_median=("pb_median", "min"),
             mean_spearman_r=("spearman_r", "mean"),
             min_spearman_r=("spearman_r", "min"),
             max_biological_score=("biological_score", "max"),
             mean_biological_score=("biological_score", "mean"),
             max_delta_score=("delta_score", "max"),
             max_normal_low_score=("normal_low_score", "max"),
-            max_leukocyte_low_score=("leukocyte_low_score", "max"),
+            max_pb_low_score=("pb_low_score", "max"),
             max_hi_score=("hi_score", "max"),
             max_expression_score=("expression_score", "max"),
         )
@@ -1230,7 +1230,7 @@ candidate_max_pan_tumor_median = st.sidebar.slider(
     0.01,
 )
 
-candidate_max_leukocyte = st.sidebar.slider(
+candidate_max_pb = st.sidebar.slider(
     "Candidate Max PB β",
     0.0,
     1.0,
@@ -1281,7 +1281,7 @@ if graph.empty:
 for optional_col in [
     "pan_tumor_median",
     "pan_normal_median",
-    "leukocyte_median",
+    "pb_median",
     "spearman_r",
     "hi_index",
     "cross_tumor_median",
@@ -1304,7 +1304,7 @@ if show_filtered_candidate_regions:
             max_normal_median=candidate_max_normal_median,
             max_pan_normal_median=candidate_max_pan_normal_median,
             max_pan_tumor_median=candidate_max_pan_tumor_median,
-            max_leukocyte=candidate_max_leukocyte,
+            max_pb=candidate_max_pb,
             min_hi=candidate_min_hi,
             cross_tumor_type=cross_tumor_type,
             max_cross_tumor_median=candidate_max_cross_tumor_median,
@@ -1399,7 +1399,7 @@ pan_tumor = graph["pan_tumor_median"]
 pan_normal = graph["pan_normal_median"]
 delta_median = graph["delta_median"]
 hi_index = graph["hi_index"]
-leukocytes = graph["leukocyte_median"]
+pb = graph["pb_median"]
 expression = graph["spearman_r"]
 
 hover_text = (
@@ -1458,7 +1458,7 @@ curves = [
     ("Median Type NT β", median_normal, "rgba(240,145,62,1)", "line", "y"),
     ("Median PanCan T β", pan_tumor, "rgba(87,172,58,1)", "line", "y"),
     ("Median PanCan NT β", pan_normal, "rgba(34,103,46,1)", "line", "y"),
-    ("Median PB β", leukocytes, "rgba(160,69,137,1)", "line", "y"),
+    ("Median PB β", pb, "rgba(160,69,137,1)", "line", "y"),
     #("Expression", expression, "rgba(127,127,127,1)", "expression", "line"),
 ]
 
@@ -1734,7 +1734,7 @@ curves = [
     ("Median Type NT β", median_normal, "rgba(240,145,62,1)"),
     ("Median PanCan T β", pan_tumor, "rgba(87,172,58,1)"),
     ("Median PanCan NT β", pan_normal, "rgba(34,103,46,1)"),
-    ("Median PB β", leukocytes, "rgba(160,69,137,1)"),
+    ("Median PB β", pb, "rgba(160,69,137,1)"),
     ("Methylation-Expression Association", expression, "rgba(0,0,0,1)"),
 ]
 
@@ -1906,7 +1906,7 @@ else:
         "max_cross_tumor_median",
         "mean_pan_tumor_median",
         "mean_pan_normal_median",
-        "mean_leukocyte_median",
+        "mean_pb_median",
         "mean_spearman_r",
     ]
     region_table_cols = [col for col in region_table_cols if col in filtered_candidate_regions.columns]
@@ -1991,7 +1991,7 @@ else:
         "pan_tumor_median",
         "pan_normal_median",
         "hi_index",
-        "leukocyte_median",
+        "pb_median",
         "spearman_r",
     ]
     cpg_table_cols = [col for col in cpg_table_cols if col in filtered_candidate_cpgs.columns]
@@ -2088,12 +2088,12 @@ def load_region_cpgs(region_id: str, tumor_type: str) -> pd.DataFrame:
         ts.hi_index,
         ts.pan_tumor_median,
         ts.pan_normal_median,
-        cf.leukocyte_median,
+        cf.pb_median,
         ec.spearman_r,
         bcs.biological_score,
         bcs.delta_score,
         bcs.normal_low_score,
-        bcs.leukocyte_low_score,
+        bcs.pb_low_score,
         bcs.hi_score,
         bcs.expression_score,
         bcs.passes_loose_seed,
@@ -2133,9 +2133,9 @@ def load_region_cpgs(region_id: str, tumor_type: str) -> pd.DataFrame:
 
     numeric_cols = [
         "start_pos", "cpg_order", "tumor_median", "normal_median", "delta_median",
-        "hi_index", "pan_tumor_median", "pan_normal_median", "leukocyte_median",
+        "hi_index", "pan_tumor_median", "pan_normal_median", "pb_median",
         "spearman_r", "biological_score", "delta_score", "normal_low_score",
-        "leukocyte_low_score", "hi_score", "expression_score",
+        "pb_low_score", "hi_score", "expression_score",
     ]
     for col in numeric_cols:
         if col in df.columns:

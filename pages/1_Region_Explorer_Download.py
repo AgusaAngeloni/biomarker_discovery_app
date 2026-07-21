@@ -409,7 +409,7 @@ def load_complete_gene_profile(
         {pan_tumor_expr} AS pan_tumor_median,
         {pan_normal_expr} AS pan_normal_median,
         {hi_expr} AS hi_index,
-        cf.leukocyte_median,
+        cf.pb_median,
         eb.spearman_r
     FROM tumor_summary ts
     JOIN cpg_annotation ca
@@ -448,7 +448,7 @@ def load_complete_gene_profile(
         "pan_tumor_median",
         "pan_normal_median",
         "hi_index",
-        "leukocyte_median",
+        "pb_median",
         "spearman_r",
     ]
     df = clean_numeric(df, numeric_cols)
@@ -464,7 +464,7 @@ def load_region_candidate_cpgs(
     max_normal_median: float,
     max_pan_normal_median: float,
     max_pan_tumor_median: float,
-    max_leukocyte: float,
+    max_pb: float,
     min_hi: float,
     cross_tumor_type: str | None = None,
     max_cross_tumor_median: float | None = None,
@@ -536,7 +536,7 @@ def load_region_candidate_cpgs(
         {pan_tumor_expr} AS pan_tumor_median,
         {pan_normal_expr} AS pan_normal_median,
         {hi_expr} AS hi_index,
-        cf.leukocyte_median,
+        cf.pb_median,
         eb.spearman_r
     FROM tumor_summary ts
     JOIN biomarker_region_cpg brc
@@ -557,7 +557,7 @@ def load_region_candidate_cpgs(
         AND ts.normal_median <= :max_normal_median
         AND COALESCE({pan_normal_expr}, 1) <= :max_pan_normal_median
         AND COALESCE({pan_tumor_expr}, 1) <= :max_pan_tumor_median
-        AND COALESCE(cf.leukocyte_median, 1) <= :max_leukocyte
+        AND COALESCE(cf.pb_median, 1) <= :max_pb
         AND COALESCE({hi_expr}, 0) >= :min_hi
         {cross_filter}
     ORDER BY ts.delta_median DESC
@@ -569,7 +569,7 @@ def load_region_candidate_cpgs(
         "max_normal_median": float(max_normal_median),
         "max_pan_normal_median": float(max_pan_normal_median),
         "max_pan_tumor_median": float(max_pan_tumor_median),
-        "max_leukocyte": float(max_leukocyte),
+        "max_pb": float(max_pb),
         "min_hi": float(min_hi),
     }
     if cross_tumor_type in {"LUAD", "LUSC"} and max_cross_tumor_median is not None:
@@ -645,7 +645,7 @@ def aggregate_gene_regions(cpgs: pd.DataFrame, apply_expression_filter: bool) ->
             "pan_tumor_median",
             "pan_normal_median",
             "hi_index",
-            "leukocyte_median",
+            "pb_median",
             "spearman_r",
         ],
     )
@@ -675,7 +675,7 @@ def aggregate_gene_regions(cpgs: pd.DataFrame, apply_expression_filter: bool) ->
             mean_cross_tumor_median=("cross_tumor_median", "mean"),
             mean_pan_tumor_median=("pan_tumor_median", "mean"),
             mean_pan_normal_median=("pan_normal_median", "mean"),
-            mean_leukocyte_median=("leukocyte_median", "mean"),
+            mean_pb_median=("pb_median", "mean"),
             mean_spearman_r=("spearman_r", "mean"),
             sequence_score=("sequence_score", "max"),
             cpg_sites=("site_id", lambda x: ";".join(sorted(set(map(str, x))))),
@@ -892,7 +892,7 @@ else:
 
 max_pan_normal_median = st.sidebar.slider("Max Median PanCan NT β", 0.0, 1.0, 0.06, 0.01)
 max_pan_tumor_median = st.sidebar.slider("Max Median PanCan T β", 0.0, 1.0, 0.06, 0.01)
-max_leukocyte = st.sidebar.slider("Max Median PB β", 0.0, 1.0, 0.04, 0.01)
+max_pb = st.sidebar.slider("Max Median PB β", 0.0, 1.0, 0.04, 0.01)
 min_hi = st.sidebar.slider("Min HI", 0.0, 5.0, 2.4, 0.05)
 
 st.sidebar.header("Methylation-Expression Association Filter")
@@ -966,7 +966,7 @@ cpgs = load_region_candidate_cpgs(
     max_normal_median=max_normal_median,
     max_pan_normal_median=max_pan_normal_median,
     max_pan_tumor_median=max_pan_tumor_median,
-    max_leukocyte=max_leukocyte,
+    max_pb=max_pb,
     min_hi=min_hi,
     cross_tumor_type=cross_tumor_type,
     max_cross_tumor_median=max_cross_tumor_median,
@@ -1128,7 +1128,7 @@ region_cols = [
     "mean_cross_tumor_median",
     "mean_pan_tumor_median",
     "mean_pan_normal_median",
-    "mean_leukocyte_median",
+    "mean_pb_median",
     "sequence_site_score",
     "cpg_sites",
     "region_ids",    

@@ -226,8 +226,8 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
     ],
     "cpg_features": [
         "site_id",
-        "leukocyte_median",
-        "leukocyte_std",
+        "pb_median",
+        "pb_std",
         "n_samples",
     ],
     "sample_metadata": [
@@ -288,7 +288,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "biological_score",
         "delta_score",
         "normal_low_score",
-        "leukocyte_low_score",
+        "pb_low_score",
         "pancancer_specificity_score",
         "hi_score",
         "expression_score",
@@ -410,8 +410,8 @@ TABLES = [
     """
     CREATE TABLE cpg_features (
         site_id           TEXT PRIMARY KEY,
-        leukocyte_median  REAL,
-        leukocyte_std     REAL,
+        pb_median  REAL,
+        pb_std     REAL,
         n_samples         INTEGER
     );
     """,
@@ -481,7 +481,7 @@ TABLES = [
         biological_score              REAL,
         delta_score                   REAL,
         normal_low_score              REAL,
-        leukocyte_low_score           REAL,
+        pb_low_score           REAL,
         pancancer_specificity_score   REAL,
         hi_score                      REAL,
         expression_score              REAL,
@@ -920,7 +920,7 @@ def align_columns(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
     int_like = {
         "start_pos", "end_pos", "tumor_n", "normal_n", "n_tumor", "n_normal",
         "pan_tumor_n", "pan_normal_n", "n_samples",
-        "n_leukocyte", "sample_type_id", "age", "tss", "core_start", "core_end",
+        "n_pb", "sample_type_id", "age", "tss", "core_start", "core_end",
         "core_length", "browser_start", "browser_end", "browser_length", "flank_bp",
         "n_manifest_cpgs", "n_manifest_c", "n_manifest_c_positions", "n_associated_genes",
         "region_rank_by_density", "cpg_order", "sequence_start", "sequence_end",
@@ -929,9 +929,9 @@ def align_columns(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
     float_like = {
         "tumor_median", "tumor_std", "normal_median", "normal_std", "pan_tumor_median",
         "pan_tumor_std", "pan_normal_median", "pan_normal_std", "delta_median",
-        "hi_index", "dispersion_index", "leukocyte_median", "leukocyte_std", "spearman_r",
+        "hi_index", "dispersion_index", "pb_median", "pb_std", "spearman_r",
         "pvalue", "biological_score", "delta_score", "normal_low_score",
-        "leukocyte_low_score", "pancancer_specificity_score", "hi_score", "expression_score",
+        "pb_low_score", "pancancer_specificity_score", "hi_score", "expression_score",
         "sample_support_score", "annotation_score", "cpg_density_per_100bp", "gc_fraction",
         "cg_density_per_100bp", "gcgc_density_per_100bp", "manifest_cpg_density_per_100bp",
         "sequence_score",

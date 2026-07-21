@@ -86,7 +86,7 @@ not one CpG site.
 This page is intended to answer:
 
 - Which regions have multiple tumor-specific CpGs?
-- Which regions are low in normal tissue and leukocytes?
+- Which regions are low in normal tissue and PB?
 - Which regions have high tumor heterogeneity or dispersion?
 - Which regions have favorable sequence context?
 - Which regions show inverse methylation-expression association?
@@ -102,7 +102,7 @@ Tumor type
 Minimum delta_median
 Maximum normal_median
 Maximum pan_normal_median
-Maximum leukocyte_median
+Maximum pb_median
 Minimum hi_index
 Optional expression filter using mean Spearman r
 ```
@@ -136,7 +136,7 @@ mean_delta
 mean_hi
 mean_normal_median
 mean_pan_normal_median
-mean_leukocyte_median
+mean_pb_median
 mean_spearman_r
 sequence_score
 cpg_sites
@@ -221,7 +221,7 @@ mean_delta
 mean_hi
 mean_normal_median
 mean_pan_normal_median
-mean_leukocyte_median
+mean_pb_median
 mean_spearman_r
 expression_signal
 sequence_site_score
@@ -273,7 +273,7 @@ Tumor median methylation
 Normal median methylation
 Pan-cancer tumor median methylation
 Pan-cancer normal median methylation
-Leukocyte median methylation
+PB median methylation
 Delta methylation
 HI index
 Spearman expression correlation
@@ -291,7 +291,7 @@ The region filters mirror the logic of the Region Explorer:
 Candidate minimum delta_median
 Candidate maximum normal_median
 Candidate maximum pan_normal_median
-Candidate maximum leukocyte_median
+Candidate maximum pb_median
 Candidate minimum hi_index
 Optional maximum Spearman r
 ```
