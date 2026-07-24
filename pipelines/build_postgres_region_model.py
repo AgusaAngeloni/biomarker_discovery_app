@@ -35,6 +35,10 @@ Region model tables added/updated for the current GitHub app:
     - biomarker_region_cpg
     - biomarker_region_sequence_score
 
+Population sensitivity additions:
+    - sample_metadata includes race/ethnicity fields when available
+    - tumor_summary_population stores full and population-filtered CpG summaries
+
 Compatibility notes:
     - Preserves gene_symbols_all and site_gene_symbols_all from pipeline 14.
     - Keeps both n_manifest_c and n_manifest_c_positions so existing pages work.
@@ -149,10 +153,14 @@ FILES: Dict[str, Path | List[Path]] = {
     "cpg_gene_map": DATA_DIR / "cpg_gene_map.parquet",
     "expression_correlation": DATA_DIR / "expression_correlation.parquet",
     "cpg_features": DATA_DIR / "cpg_features.parquet",
-    "sample_metadata": DATA_DIR / "pheno_clean.parquet",
+    "sample_metadata": [
+        DATA_DIR / "pheno_population.parquet",
+        DATA_DIR / "pheno_clean.parquet",
+    ],
     "gene_annotation": DATA_DIR / "gene_annotation.parquet",
     "tumor_types": DATA_DIR / "tumor_types.parquet",
     "tumor_summary": DATA_DIR / "methylation_summary.parquet",
+    "tumor_summary_population": DATA_DIR / "methylation_summary_population.parquet",
 
     # Region biomarker model tables
     "biomarker_cpg_score": [
@@ -182,6 +190,7 @@ BASE_TABLES = [
     "gene_annotation",
     "tumor_types",
     "tumor_summary",
+    "tumor_summary_population",
 ]
 
 BIOMARKER_TABLES = [
@@ -242,6 +251,11 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "sample_class",
         "platform",
         "batch",
+        "race",
+        "ethnicity",
+        "population_group",
+        "race_reported",
+        "is_asian",
     ],
     "gene_annotation": [
         "ensembl_id",
@@ -277,6 +291,31 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "pan_normal_median",
         "pan_normal_std",
         "pan_normal_n",
+        "delta_median",
+        "hi_index",
+        "dispersion_index",
+    ],
+    "tumor_summary_population": [
+        "site_id",
+        "tumor_type",
+        "population_mode",
+        "pan_reference_mode",
+        "tumor_median",
+        "tumor_std",
+        "tumor_n",
+        "tumor_total_samples",
+        "normal_median",
+        "normal_std",
+        "normal_n",
+        "normal_total_samples",
+        "pan_tumor_median",
+        "pan_tumor_std",
+        "pan_tumor_n",
+        "pan_tumor_total_samples",
+        "pan_normal_median",
+        "pan_normal_std",
+        "pan_normal_n",
+        "pan_normal_total_samples",
         "delta_median",
         "hi_index",
         "dispersion_index",
@@ -365,6 +404,7 @@ DROP TABLE IF EXISTS cpg_features CASCADE;
 DROP TABLE IF EXISTS sample_metadata CASCADE;
 DROP TABLE IF EXISTS gene_annotation CASCADE;
 DROP TABLE IF EXISTS tumor_types CASCADE;
+DROP TABLE IF EXISTS tumor_summary_population CASCADE;
 DROP TABLE IF EXISTS tumor_summary CASCADE;
 """
 
@@ -426,8 +466,16 @@ TABLES = [
         age            INTEGER,
         tissue_type    TEXT,
         sample_class   TEXT,
-        platform       TEXT,
-        batch          TEXT
+        platform         TEXT,
+        batch            TEXT,
+        race             TEXT,
+        ethnicity        TEXT,
+        population_group TEXT CHECK (
+            population_group IS NULL OR
+            population_group IN ('Asian', 'Non-Asian', 'Unknown')
+        ),
+        race_reported    BOOLEAN,
+        is_asian         BOOLEAN
     );
     """,
     """
@@ -471,6 +519,48 @@ TABLES = [
         hi_index           REAL,
         dispersion_index   REAL,
         PRIMARY KEY (site_id, tumor_type)
+    );
+    """,
+    """
+    CREATE TABLE tumor_summary_population (
+        site_id                    TEXT NOT NULL,
+        tumor_type                 TEXT NOT NULL,
+        population_mode            TEXT NOT NULL CHECK (
+            population_mode IN (
+                'full',
+                'asian_excluded',
+                'reported_non_asian',
+                'asian_only'
+            )
+        ),
+        pan_reference_mode         TEXT NOT NULL CHECK (
+            pan_reference_mode IN ('full', 'matched')
+        ),
+        tumor_median               REAL,
+        tumor_std                  REAL,
+        tumor_n                    INTEGER,
+        tumor_total_samples        INTEGER,
+        normal_median              REAL,
+        normal_std                 REAL,
+        normal_n                   INTEGER,
+        normal_total_samples       INTEGER,
+        pan_tumor_median           REAL,
+        pan_tumor_std              REAL,
+        pan_tumor_n                INTEGER,
+        pan_tumor_total_samples    INTEGER,
+        pan_normal_median          REAL,
+        pan_normal_std             REAL,
+        pan_normal_n               INTEGER,
+        pan_normal_total_samples   INTEGER,
+        delta_median               REAL,
+        hi_index                   REAL,
+        dispersion_index           REAL,
+        PRIMARY KEY (
+            site_id,
+            tumor_type,
+            population_mode,
+            pan_reference_mode
+        )
     );
     """,
     """
@@ -568,6 +658,25 @@ CREATE INDEX IF NOT EXISTS idx_tumor_summary_site
     ON tumor_summary(site_id);
 CREATE INDEX IF NOT EXISTS idx_tumor_summary_site_tumor
     ON tumor_summary(site_id, tumor_type);
+
+CREATE INDEX IF NOT EXISTS idx_population_summary_tumor_mode
+    ON tumor_summary_population(tumor_type, population_mode, pan_reference_mode);
+CREATE INDEX IF NOT EXISTS idx_population_summary_site
+    ON tumor_summary_population(site_id);
+CREATE INDEX IF NOT EXISTS idx_population_summary_delta
+    ON tumor_summary_population(
+        tumor_type,
+        population_mode,
+        pan_reference_mode,
+        delta_median DESC
+    );
+CREATE INDEX IF NOT EXISTS idx_population_summary_hi
+    ON tumor_summary_population(
+        tumor_type,
+        population_mode,
+        pan_reference_mode,
+        hi_index DESC
+    );
 
 CREATE INDEX IF NOT EXISTS idx_cpg_gene_symbol
     ON cpg_gene_map(gene_symbol);
@@ -830,7 +939,7 @@ def prepare_special_table(df: pd.DataFrame, table_name: str, source_path: Path |
         if "sample_class" not in out.columns:
             out["sample_class"] = "tumor"
 
-    elif table_name == "tumor_summary":
+    elif table_name in {"tumor_summary", "tumor_summary_population"}:
         alias_map = {
             "tumor_n": ["tumor_n", "n_tumor"],
             "n_tumor": ["n_tumor", "tumor_n"],
@@ -920,6 +1029,8 @@ def align_columns(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
     int_like = {
         "start_pos", "end_pos", "tumor_n", "normal_n", "n_tumor", "n_normal",
         "pan_tumor_n", "pan_normal_n", "n_samples",
+        "tumor_total_samples", "normal_total_samples",
+        "pan_tumor_total_samples", "pan_normal_total_samples",
         "n_pb", "sample_type_id", "age", "tss", "core_start", "core_end",
         "core_length", "browser_start", "browser_end", "browser_length", "flank_bp",
         "n_manifest_cpgs", "n_manifest_c", "n_manifest_c_positions", "n_associated_genes",
@@ -936,7 +1047,14 @@ def align_columns(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
         "cg_density_per_100bp", "gcgc_density_per_100bp", "manifest_cpg_density_per_100bp",
         "sequence_score",
     }
-    bool_like = {"passes_loose_seed", "passes_default_filter", "passes_strict_filter", "sequence_available"}
+    bool_like = {
+        "passes_loose_seed",
+        "passes_default_filter",
+        "passes_strict_filter",
+        "sequence_available",
+        "race_reported",
+        "is_asian",
+    }
 
     for col in int_like.intersection(out.columns):
         out[col] = safe_numeric(out[col]).astype("Int64")
@@ -954,6 +1072,12 @@ def deduplicate(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
         "cpg_gene_map": ["site_id", "ensembl_id", "gene_symbol"],
         "expression_correlation": ["site_id", "tumor_type", "sample_class", "ensembl_id", "gene_symbol"],
         "tumor_summary": ["site_id", "tumor_type"],
+        "tumor_summary_population": [
+            "site_id",
+            "tumor_type",
+            "population_mode",
+            "pan_reference_mode",
+        ],
         "sample_metadata": ["sample_id"],
         "gene_annotation": ["ensembl_id"],
         "cpg_annotation": ["site_id"],
